@@ -117,6 +117,7 @@ def run_automl(
 
         models_to_train = selected_models if selected_models else ['lr', 'rf', 'gbc', 'et', 'xgb']
         mapped_models = [MODEL_NAME_MAP.get(m, m) for m in models_to_train]
+        logger.info(f"Training {len(mapped_models)} models: {mapped_models}")
         metrics_list = []
         best_model = None
         best_score = -1
@@ -126,7 +127,7 @@ def run_automl(
             check_stop()
             report_progress(10 + int(60 * i / total_models), f"训练模型: {model_name.upper()}")
             try:
-                model = cls_create(model=model_name, verbose=False)
+                model = cls_create(model_name, verbose=False)
                 # BUG FIX: pull() returns ALL CV folds + Mean + SD rows.
                 # Extract only the Mean row so metrics_table has one row per model.
                 all_folds = cls_pull()
@@ -142,7 +143,7 @@ def run_automl(
 
                 report_progress(10 + int(60 * (i + 1) / total_models), f"完成: {model_name.upper()}")
             except Exception as e:
-                # BUG FIX: was `str(Exception)` (the class object), must be `str(e)` (the instance)
+                logger.error(f"Model {model_name.upper()} training failed: {str(e)}")
                 if "stopped by user" in str(e):
                     raise
                 continue
@@ -150,9 +151,14 @@ def run_automl(
         check_stop()
         if metrics_list:
             metrics_df = pd.concat(metrics_list, ignore_index=True)
+            logger.info(f"Successfully trained {len(metrics_list)} models")
         else:
             all_folds = cls_pull()
+            logger.warning(f"No models trained successfully. PyCaret pull() returned: {all_folds.to_dict()}")
             metrics_df = _extract_mean_row(all_folds, "unknown")
+
+        logger.info(f"Final metrics_df columns: {metrics_df.columns.tolist()}")
+        logger.info(f"Final metrics_df content: {metrics_df.to_dict()}")
 
         report_progress(75, "模型训练完成")
         check_stop()
@@ -229,7 +235,7 @@ def run_automl(
             check_stop()
             report_progress(10 + int(60 * i / total_models), f"训练模型: {model_name.upper()}")
             try:
-                model = reg_create(model=model_name, verbose=False)
+                model = reg_create(model_name, verbose=False)
                 # BUG FIX: extract Mean row only
                 all_folds = reg_pull()
                 mean_row = _extract_mean_row(all_folds, model_name)
@@ -300,7 +306,7 @@ def run_automl(
             check_stop()
             report_progress(10 + int(70 * i / total_models), f"训练模型: {model_name.upper()}")
             try:
-                model = clu_create(model=model_name, num_clusters=4, verbose=False)
+                model = clu_create(model_name, num_clusters=4, verbose=False)
                 # BUG FIX: extract Mean row from pull()
                 all_folds = clu_pull()
                 mean_row = _extract_mean_row(all_folds, model_name)
