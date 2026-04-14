@@ -3,7 +3,9 @@ import uuid
 import base64
 import io
 import logging
+import math
 import pandas as pd
+import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -21,6 +23,21 @@ MODEL_NAME_MAP = {
     'et': 'et', 'gbc': 'gbc', 'gbr': 'gbr', 'lightgbm': 'lightgbm',
     'xgb': 'xgboost', 'dt': 'dt', 'knn': 'knn', 'svm': 'svm',
     'ada': 'ada', 'lda': 'lda', 'qda': 'qda', 'nb': 'nb',
+}
+
+PYCARET_METRIC_MAP = {
+    'Prec.': 'Precision',
+    'Prec': 'Precision',
+    'Recall': 'Recall',
+    'F1': 'F1',
+    'AUC': 'AUC',
+    'Kappa': 'Kappa',
+    'MCC': 'MCC',
+    'R2': 'R2',
+    'RMSE': 'RMSE',
+    'MAE': 'MAE',
+    'MSE': 'MSE',
+    'RMSLE': 'RMSLE',
 }
 
 
@@ -42,6 +59,15 @@ def _extract_mean_row(pulled_df: pd.DataFrame, model_name: str) -> pd.DataFrame:
             mean_row = pulled_df.iloc[[-1]].copy()
 
     mean_row['Model'] = model_name.upper()
+
+    mean_row = mean_row.rename(columns=PYCARET_METRIC_MAP)
+
+    for col in mean_row.columns:
+        if col != 'Model' and col not in PYCARET_METRIC_MAP.values():
+            val = mean_row[col].iloc[0] if len(mean_row) > 0 else None
+            if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+                mean_row.loc[0, col] = None
+
     return mean_row
 
 
@@ -335,7 +361,11 @@ def _make_serializable(obj):
         return [_make_serializable(v) for v in obj]
     elif hasattr(obj, "item"):
         return obj.item()
-    elif isinstance(obj, (float, int, str, bool, type(None))):
+    elif isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    elif isinstance(obj, (int, str, bool, type(None))):
         return obj
     else:
         return str(obj)
