@@ -26,19 +26,20 @@ MODEL_NAME_MAP = {
 
 def _extract_mean_row(pulled_df: pd.DataFrame, model_name: str) -> pd.DataFrame:
     """
-    PyCaret's pull() after create_model() returns a DataFrame with one row per CV fold
-    plus a 'Mean' row and an 'SD' row at the end. We only keep the Mean row as the
-    per-model summary so the metrics table has exactly one row per model.
-
-    Typical index structure:  0, 1, 2, ..., 9, 'Mean', 'SD'
+    鲁棒性提取：处理空值、单行、以及缺失 Mean 的情况
     """
+    if pulled_df is None or pulled_df.empty:
+        return pd.DataFrame([{'Model': model_name.upper()}])
+
     if 'Mean' in pulled_df.index:
         mean_row = pulled_df.loc[['Mean']].copy()
-    elif len(pulled_df) >= 2:
-        # Fallback: second-to-last row is typically the Mean
-        mean_row = pulled_df.iloc[[-2]].copy()
+    elif len(pulled_df) == 1:
+        mean_row = pulled_df.copy()
     else:
-        mean_row = pulled_df.iloc[[-1]].copy()
+        try:
+            mean_row = pulled_df.iloc[[-2]].copy()
+        except IndexError:
+            mean_row = pulled_df.iloc[[-1]].copy()
 
     mean_row['Model'] = model_name.upper()
     return mean_row
@@ -136,9 +137,9 @@ def run_automl(
             report_progress(80, "生成 SHAP 分析...")
             check_stop()
             try:
-                # BUG FIX: interpret_model() does not return a figure object.
-                # Capture the matplotlib figure via plt.gcf() after the call.
+                plt.clf()
                 plt.close('all')
+
                 interpret_model(best_model, verbose=False)
                 fig = plt.gcf()
                 if fig and fig.get_axes():
@@ -147,8 +148,10 @@ def run_automl(
                     buf.seek(0)
                     shap_plot = base64.b64encode(buf.read()).decode('utf-8')
                     buf.close()
-                plt.close('all')
-            except Exception:
+            except Exception as e:
+                logger.error(f"SHAP Plot generation failed: {str(e)}")
+            finally:
+                plt.clf()
                 plt.close('all')
 
             check_stop()
@@ -172,6 +175,7 @@ def run_automl(
                     feature_names = [f"feature_{i}" for i in range(len(fis))]
                 sorted_idx = np.argsort(fis)[::-1][:20]
                 for idx in sorted_idx:
+                    check_stop()
                     feature_importance[str(feature_names[idx])] = round(float(fis[idx]), 6)
         except Exception:
             pass
@@ -243,6 +247,7 @@ def run_automl(
                     feature_names = [f"feature_{i}" for i in range(len(fis))]
                 sorted_idx = np.argsort(fis)[::-1][:20]
                 for idx in sorted_idx:
+                    check_stop()
                     feature_importance[str(feature_names[idx])] = round(float(fis[idx]), 6)
         except Exception:
             pass

@@ -70,7 +70,9 @@ export default function StepEvaluate() {
   const getMetricValues = (metric: string) => {
     return metrics_table.map((row) => {
       const v = row[metric];
-      return typeof v === 'number' ? v : parseFloat(String(v)) || 0;
+      if (v === undefined || v === null || v === '') return null;
+      const parsed = parseFloat(String(v));
+      return isNaN(parsed) ? null : parsed;
     });
   };
 
@@ -81,13 +83,17 @@ export default function StepEvaluate() {
   const primaryValues = getMetricValues(effectiveMetric);
   const metricConfig = METRIC_OPTIONS[effectiveMetric] || { yAxisMin: 0, higherIsBetter: true };
 
-  // BUG FIX: determine best model by sorting on the primary metric (respecting direction)
   const bestModelIndex = (() => {
     if (primaryValues.length === 0) return 0;
+    const validValues = primaryValues.filter((v) => v !== null) as number[];
+    if (validValues.length === 0) return 0;
+
     if (metricConfig.higherIsBetter) {
-      return primaryValues.indexOf(Math.max(...primaryValues));
+      const max = Math.max(...validValues);
+      return primaryValues.indexOf(max);
     } else {
-      return primaryValues.indexOf(Math.min(...primaryValues));
+      const min = Math.min(...validValues);
+      return primaryValues.indexOf(min);
     }
   })();
   const bestModelName = modelNames[bestModelIndex] || '-';
@@ -271,7 +277,7 @@ export default function StepEvaluate() {
                   <thead className="sticky top-0 bg-gray-50">
                     <tr>
                       {misclassifiedColumns.map((col) => (
-                        <th key={col} className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">
+                        <th key={col} className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap min-w-[120px]">
                           {col}
                         </th>
                       ))}

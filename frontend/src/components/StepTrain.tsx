@@ -102,6 +102,7 @@ export default function StepTrain() {
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      sessionIdRef.current = '';
       stoppedRef.current = true;
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
@@ -113,6 +114,8 @@ export default function StepTrain() {
         await stopTraining(sessionIdRef.current);
       } catch { /* ignore */ }
     }
+    sessionIdRef.current = '';
+    stoppedRef.current = true;
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     setTraining(false);
     setError('用户取消了训练');
