@@ -5,6 +5,7 @@ import io
 import gc
 import logging
 import math
+import multiprocessing
 import pandas as pd
 import numpy as np
 import matplotlib
@@ -17,9 +18,12 @@ from app.config import UPLOAD_DIR, MODEL_DIR
 
 logger = logging.getLogger(__name__)
 
-os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["JOBLIB_START_METHOD"] = "spawn"
+
+multiprocessing.set_start_method("spawn", force=True)
 
 MODEL_NAME_MAP = {
     'lr': 'lr', 'ridge': 'ridge', 'lasso': 'lasso', 'rf': 'rf',
@@ -292,10 +296,12 @@ def run_automl(
                     shap_plot = base64.b64encode(buf.read()).decode('utf-8')
                     buf.close()
             except Exception as e:
-                logger.error(f"SHAP Plot generation failed: {str(e)}")
+                logger.warning(f"SHAP Plot generation failed (skipping): {str(e)}")
+                shap_plot = ""
             finally:
                 plt.clf()
                 plt.close('all')
+                gc.collect()
 
             check_stop()
             report_progress(85, "分析错误样本...")
