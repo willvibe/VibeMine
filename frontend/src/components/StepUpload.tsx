@@ -13,7 +13,7 @@ export default function StepUpload() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<DataTab>('info');
+  const [activeTab, setActiveTab] = useState<DataTab>('data');
 
   const {
     filename,
@@ -131,19 +131,20 @@ export default function StepUpload() {
               <button
                 onClick={handleAiInsight}
                 disabled={aiLoading}
-                className="px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-600 text-xs font-medium hover:bg-indigo-100 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xs font-medium shadow-md hover:shadow-lg hover:shadow-indigo-500/20 transition-all disabled:opacity-60"
                 title={t('dataAiInsight')}
               >
                 {aiLoading ? (
-                  <svg className="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                   </svg>
                 ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 )}
+                {!aiLoading && <span>AI</span>}
               </button>
               <button
                 onClick={handleReUpload}
@@ -261,25 +262,32 @@ export default function StepUpload() {
             )}
 
             {activeTab === 'data' && (
-              <div className="overflow-x-auto rounded-xl border border-gray-100">
-                <table className="w-full text-xs">
-                  <thead className="bg-gray-50/80">
-                    <tr>
-                      {columns.map(col => (
-                        <th key={col} className="px-3 py-2 text-left font-medium text-gray-500 whitespace-nowrap">{col}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {(preview || []).map((row, i) => (
-                      <tr key={i} className="hover:bg-gray-50/50">
+              <div className="rounded-xl border border-gray-100 overflow-hidden">
+                <div className="max-h-80 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50/80 sticky top-0">
+                      <tr>
                         {columns.map(col => (
-                          <td key={col} className="px-3 py-2 text-gray-600 whitespace-nowrap">{String(row[col] ?? '')}</td>
+                          <th key={col} className="px-3 py-2 text-left font-medium text-gray-500 whitespace-nowrap">{col}</th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {(preview || []).slice(0, 20).map((row, i) => (
+                        <tr key={i} className="hover:bg-gray-50/50">
+                          {columns.map(col => (
+                            <td key={col} className="px-3 py-2 text-gray-600 whitespace-nowrap">{String(row[col] ?? '')}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {(preview || []).length > 20 && (
+                  <div className="px-3 py-2 text-xs text-gray-400 bg-gray-50/50 text-center">
+                    显示前 20 / {(preview || []).length} 条数据
+                  </div>
+                )}
               </div>
             )}
           </div>

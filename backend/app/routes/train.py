@@ -193,7 +193,20 @@ async def get_train_status(session_id: str):
         session = training_sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="训练会话不存在或已过期")
-    return session.to_dict()
+    d = {
+        "session_id": session.session_id,
+        "status": session.status,
+        "progress": session.progress,
+        "current_model": session.current_model,
+        "completed_models": session.completed_models,
+    }
+    if session.result:
+        result_copy = dict(session.result)
+        result_copy.pop('shap_plot', None)
+        d["result"] = result_copy
+    if session.error:
+        d["error"] = session.error
+    return d
 
 
 @router.post("/train/stop/{session_id}")

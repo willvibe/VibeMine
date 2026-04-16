@@ -7,6 +7,7 @@ import * as echarts from 'echarts/core';
 import { BarChart, RadarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
+import StepReport from './StepReport';
 
 echarts.use([BarChart, RadarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
@@ -291,20 +292,23 @@ export default function StepEvaluate() {
       })),
       bottom: 0,
       icon: 'roundRect',
-      itemWidth: 12,
-      itemHeight: 12,
-      textStyle: { color: '#6b7280', fontSize: 10, fontFamily: 'ui-sans-serif' },
+      itemWidth: 14,
+      itemHeight: 14,
+      textStyle: { color: '#6b7280', fontSize: 11, fontFamily: 'ui-sans-serif', padding: [0, 4, 0, 0] },
     },
-    grid: { top: 12, right: needsDualAxis ? 70 : 24, bottom: 44, left: 48, containLabel: true },
+    grid: { top: 12, right: needsDualAxis ? 70 : 24, bottom: 52, left: 48, containLabel: true },
     xAxis: {
       type: 'category' as const,
       data: metrics_table.map((r, i) => i === bestIdx ? `🏆 ${getFullModelName(String(r.Model || ''))}` : getFullModelName(String(r.Model || ''))),
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color: '#6b7280', fontSize: 9, rotate: 25, fontFamily: 'ui-sans-serif',
+        color: '#6b7280', fontSize: 9, rotate: 30, fontFamily: 'ui-sans-serif',
         interval: 0,
-        formatter: (v: string) => v.replace('🏆 ', '').length > 14 ? v.replace('🏆 ', '').substring(0, 11) + '..' : v.replace('🏆 ', ''),
+        formatter: (v: string) => {
+          const name = v.replace('🏆 ', '');
+          return name.length > 12 ? name.substring(0, 10) + '..' : name;
+        },
       },
       splitLine: { show: false },
     },
@@ -520,7 +524,7 @@ export default function StepEvaluate() {
                 </button>
               </div>
             </div>
-            <ReactECharts ref={barChartRef} echarts={echarts} option={barOption} style={{ height: 320 }} notMerge={true} lazyUpdate={true} />
+            <ReactECharts ref={barChartRef} echarts={echarts} option={barOption} style={{ height: 320, width: '100%' }} notMerge={true} lazyUpdate={true} />
           </div>
 
           {shap_plot && taskType === 'classification' && (
@@ -778,6 +782,8 @@ export default function StepEvaluate() {
               ))}
             </div>
           </div>
+
+          <StepReport />
 
           <button
             onClick={() => setStep(4)}

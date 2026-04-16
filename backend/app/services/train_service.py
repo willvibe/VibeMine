@@ -480,6 +480,7 @@ def run_automl(
 
         models_to_train = selected_models if selected_models else ['kmeans', 'hclust', 'meanshift']
         metrics_list = []
+        model_scores = {}
         best_model = None
         best_score = -1
         total_models = len(models_to_train)
@@ -497,11 +498,12 @@ def run_automl(
                 metrics_list.append(mean_row)
                 completed_models.append(model_name.upper())
 
-                if hasattr(model, 'score'):
-                    score = model.score(df)
-                    if score > best_score:
-                        best_score = score
-                        best_model = model
+                # Track Silhouette score for clustering
+                silhouette_val = float(mean_row['Silhouette'].iloc[0]) if 'Silhouette' in mean_row.columns else 0
+                model_scores[model_name.upper()] = silhouette_val
+                if silhouette_val > best_score:
+                    best_score = silhouette_val
+                    best_model = model
 
                 report_progress(10 + int(70 * (i + 1) / total_models), f"完成: {model_name.upper()}")
             except Exception as e:
@@ -567,6 +569,9 @@ def run_automl(
         "feature_importance": feature_importance,
         "shap_plot": shap_plot,
         "misclassified_samples": misclassified_samples,
+        "completed_models": completed_models,
+        "model_scores": {k: round(float(v), 6) if isinstance(v, (int, float)) else v for k, v in model_scores.items()},
+        "best_score": round(float(best_score), 6) if best_score else None,
     }
 
 
