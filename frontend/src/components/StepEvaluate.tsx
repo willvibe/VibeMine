@@ -22,13 +22,12 @@ const MODEL_FULL_NAMES: Record<string, string> = {
 };
 
 const METRIC_LABELS: Record<string, string> = {
-  Accuracy: 'accuracy', AUC: 'auc', AUC_OVR: 'auc_ovr', AUC_OVO: 'auc_ovo',
-  Recall: 'recall', Precision: 'precision', F1: 'f1',
+  Accuracy: 'accuracy', AUC: 'auc', Recall: 'recall', Precision: 'precision', F1: 'f1',
   R2: 'r2', RMSE: 'rmse', MAE: 'mae', 'Silhouette': 'silhouette',
   'Calinski-Harabasz': 'calinskiHarabasz', 'Davies-Bouldin': 'daviesBouldin',
 };
 
-const HIGHER_IS_BETTER_METRICS = new Set(['Accuracy', 'AUC', 'AUC_OVR', 'AUC_OVO', 'Recall', 'Precision', 'F1', 'R2', 'Silhouette', 'Calinski-Harabasz']);
+const HIGHER_IS_BETTER_METRICS = new Set(['Accuracy', 'AUC', 'Recall', 'Precision', 'F1', 'R2', 'Silhouette', 'Calinski-Harabasz']);
 
 const DISPLAY_EXCLUDE = new Set(['index', 'TT (Sec)', 'TT(Sec)', 'MS', 'prediction_label', 'prediction_score']);
 

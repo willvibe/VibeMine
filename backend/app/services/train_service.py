@@ -10,8 +10,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from pycaret.classification import setup as cls_setup, create_model as cls_create, pull as cls_pull, save_model as cls_save, interpret_model, predict_model, tune_model as cls_tune, ensemble_model as cls_ensemble, add_metric, get_metrics, remove_metric
-from sklearn.metrics import roc_auc_score
+from pycaret.classification import setup as cls_setup, create_model as cls_create, pull as cls_pull, save_model as cls_save, interpret_model, predict_model, tune_model as cls_tune, ensemble_model as cls_ensemble
 from pycaret.regression import setup as reg_setup, create_model as reg_create, pull as reg_pull, save_model as reg_save, tune_model as reg_tune, ensemble_model as reg_ensemble
 from pycaret.clustering import setup as clu_setup, create_model as clu_create, pull as clu_pull, save_model as clu_save
 from app.config import UPLOAD_DIR, MODEL_DIR
@@ -192,15 +191,6 @@ def run_automl(
         setup_params.update(cv_params)
 
         cls_setup(**setup_params)
-
-        try:
-            existing_metrics = get_metrics()
-            if 'AUC' in existing_metrics.index:
-                remove_metric('AUC')
-            add_metric('auc_ovr', 'AUC_OVR', roc_auc_score, target='pred_proba', greater_is_better=True, multiclass=True, multi_class='ovr')
-            add_metric('auc_ovo', 'AUC_OVO', roc_auc_score, target='pred_proba', greater_is_better=True, multiclass=True, multi_class='ovo')
-        except Exception as e:
-            logger.warning(f"Failed to add custom AUC metrics: {e}")
 
         report_progress(8, "数据预处理完成")
         check_stop()
@@ -538,7 +528,7 @@ def run_automl(
     report_progress(98, "生成报告...")
 
     METRICS_COLUMNS = {
-        'Accuracy', 'AUC', 'AUC_OVR', 'AUC_OVO', 'Recall', 'Precision', 'F1', 'Kappa', 'MCC',
+        'Accuracy', 'AUC', 'Recall', 'Precision', 'F1', 'Kappa', 'MCC',
         'R2', 'RMSE', 'MAE', 'MSE', 'RMSLE',
         'Silhouette', 'Calinski-Harabasz', 'Davies-Bouldin',
     }
