@@ -12,11 +12,10 @@ echarts.use([BarChart, RadarChart, GridComponent, TooltipComponent, LegendCompon
 
 const MODEL_FULL_NAMES: Record<string, string> = {
   'lr': 'Logistic Regression', 'rf': 'Random Forest', 'gbc': 'Gradient Boosting Classifier',
-  'et': 'Extra Trees', 'xgb': 'XGBoost', 'lightgbm': 'Light GBM', 'dt': 'Decision Tree',
-  'knn': 'K Neighbors', 'ada': 'Ada Boost', 'lda': 'Linear Discriminant Analysis',
+  'et': 'Extra Trees Classifier', 'xgb': 'XGBoost', 'lightgbm': 'LightGBM', 'dt': 'Decision Tree',
+  'knn': 'K-Nearest Neighbors', 'ada': 'AdaBoost', 'lda': 'Linear Discriminant Analysis',
   'qda': 'Quadratic Discriminant Analysis', 'nb': 'Naive Bayes', 'svm': 'SVM',
-  'ridge': 'Ridge Classifier',
-  'lasso': 'Lasso', 'gbr': 'Gradient Boosting Regressor',
+  'ridge': 'Ridge Regression', 'lasso': 'Lasso Regression', 'gbr': 'Gradient Boosting Regressor',
   'kmeans': 'K-Means', 'hclust': 'Hierarchical Clustering', 'meanshift': 'Mean Shift',
   'dbscan': 'DBSCAN', 'affinity': 'Affinity Propagation',
 };
