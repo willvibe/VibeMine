@@ -19,9 +19,39 @@ export interface TrainResult {
   model_id: string;
   metrics_table: Record<string, unknown>[];
   feature_importance: Record<string, number>;
-  ai_evaluation: string;
   shap_plot?: string;
   misclassified_samples?: Record<string, unknown>[];
+}
+
+export interface DataInfo {
+  column: string;
+  dtype: string;
+  non_null: number;
+  null: number;
+  unique: number;
+  sample?: string;
+}
+
+export interface DataDescribe {
+  [key: string]: {
+    count?: number | string;
+    mean?: number | string;
+    std?: number | string;
+    min?: number | string;
+    '25%'?: number | string;
+    '50%'?: number | string;
+    '75%'?: number | string;
+    max?: number | string;
+    top?: number | string;
+    freq?: number | string;
+    unique?: number | string;
+  };
+}
+
+export interface ClassDistribution {
+  [column: string]: {
+    [value: string]: number;
+  };
 }
 
 interface AppState {
@@ -32,6 +62,10 @@ interface AppState {
   preview: Record<string, unknown>[];
   columnDetails: ColumnDetail[];
   aiInsight: string;
+  dataInfo: DataInfo[];
+  dataDescribe: DataDescribe;
+  totalRows: number;
+  classDistributions: ClassDistribution;
   taskType: string;
   targetColumn: string;
   selectedModels: string[];
@@ -39,6 +73,9 @@ interface AppState {
   useSmote: boolean;
   isTraining: boolean;
   trainResult: TrainResult | null;
+  sessionId: string | null;
+  aiEvaluation: string;
+  misclassifiedAnalysis: string;
   error: string | null;
   imbalanceDetected: boolean;
   imbalanceRatio: number;
@@ -51,6 +88,10 @@ interface AppState {
     preview: Record<string, unknown>[];
     columnDetails: ColumnDetail[];
     aiInsight: string;
+    dataInfo?: DataInfo[];
+    dataDescribe?: DataDescribe;
+    totalRows?: number;
+    classDistributions?: ClassDistribution;
   }) => void;
   setImbalanceInfo: (detected: boolean, ratio: number) => void;
   setTaskType: (type: string) => void;
@@ -59,7 +100,10 @@ interface AppState {
   setIgnoreColumns: (cols: string[]) => void;
   setUseSmote: (val: boolean) => void;
   setTraining: (val: boolean) => void;
-  setTrainResult: (result: TrainResult) => void;
+  setTrainResult: (result: TrainResult, sessionId?: string) => void;
+  setAiEvaluation: (evaluation: string) => void;
+  setMisclassifiedAnalysis: (analysis: string) => void;
+  setAiInsight: (insight: string) => void;
   setError: (err: string | null) => void;
   reset: () => void;
 }
@@ -67,11 +111,15 @@ interface AppState {
 const initialState = {
   step: 0,
   filename: '',
-  columns: [],
+  columns: [] as string[],
   shape: [0, 0] as [number, number],
   preview: [] as Record<string, unknown>[],
   columnDetails: [] as ColumnDetail[],
   aiInsight: '',
+  dataInfo: [] as DataInfo[],
+  dataDescribe: {} as DataDescribe,
+  totalRows: 0,
+  classDistributions: {} as ClassDistribution,
   taskType: 'classification',
   targetColumn: '',
   selectedModels: ['lr', 'rf', 'gbc', 'et', 'xgb'],
@@ -79,6 +127,9 @@ const initialState = {
   useSmote: false,
   isTraining: false,
   trainResult: null as TrainResult | null,
+  sessionId: null as string | null,
+  aiEvaluation: '',
+  misclassifiedAnalysis: '',
   error: null as string | null,
   imbalanceDetected: false,
   imbalanceRatio: 0,
@@ -95,6 +146,10 @@ export const useAppStore = create<AppState>((set) => ({
       preview: data.preview,
       columnDetails: data.columnDetails,
       aiInsight: data.aiInsight,
+      dataInfo: data.dataInfo || [],
+      dataDescribe: data.dataDescribe || {},
+      totalRows: data.totalRows || 0,
+      classDistributions: data.classDistributions || {},
     }),
   setImbalanceInfo: (detected, ratio) => set({ imbalanceDetected: detected, imbalanceRatio: ratio }),
   setTaskType: (taskType) => set({ taskType }),
@@ -103,7 +158,10 @@ export const useAppStore = create<AppState>((set) => ({
   setIgnoreColumns: (ignoreColumns) => set({ ignoreColumns }),
   setUseSmote: (useSmote) => set({ useSmote }),
   setTraining: (isTraining) => set({ isTraining }),
-  setTrainResult: (trainResult) => set({ trainResult }),
+  setTrainResult: (result, sessionId) => set({ trainResult: result, sessionId: sessionId || null }),
+  setAiEvaluation: (aiEvaluation) => set({ aiEvaluation }),
+  setMisclassifiedAnalysis: (misclassifiedAnalysis) => set({ misclassifiedAnalysis }),
+  setAiInsight: (aiInsight) => set({ aiInsight }),
   setError: (error) => set({ error }),
   reset: () => set(initialState),
 }));

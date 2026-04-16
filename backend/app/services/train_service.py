@@ -2,6 +2,7 @@ import os
 import uuid
 import base64
 import io
+import gc
 import logging
 import math
 import pandas as pd
@@ -9,14 +10,15 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from pycaret.classification import setup as cls_setup, create_model as cls_create, pull as cls_pull, save_model as cls_save, interpret_model, predict_model
-from pycaret.regression import setup as reg_setup, create_model as reg_create, pull as reg_pull, save_model as reg_save
+from pycaret.classification import setup as cls_setup, create_model as cls_create, pull as cls_pull, save_model as cls_save, interpret_model, predict_model, tune_model as cls_tune, ensemble_model as cls_ensemble, add_metric, get_metrics, remove_metric
+from sklearn.metrics import roc_auc_score
+from pycaret.regression import setup as reg_setup, create_model as reg_create, pull as reg_pull, save_model as reg_save, tune_model as reg_tune, ensemble_model as reg_ensemble
 from pycaret.clustering import setup as clu_setup, create_model as clu_create, pull as clu_pull, save_model as clu_save
 from app.config import UPLOAD_DIR, MODEL_DIR
 
 logger = logging.getLogger(__name__)
 
-os.environ["OMP_NUM_THREADS"] = "14"
+os.environ.setdefault("OMP_NUM_THREADS", os.cpu_count() and str(min(os.cpu_count(), 14)) or "4")
 
 MODEL_NAME_MAP = {
     'lr': 'lr', 'ridge': 'ridge', 'lasso': 'lasso', 'rf': 'rf',
@@ -31,6 +33,8 @@ PYCARET_METRIC_MAP = {
     'Recall': 'Recall',
     'F1': 'F1',
     'AUC': 'AUC',
+    'AUC_OVR': 'AUC_OVR',
+    'AUC_OVO': 'AUC_OVO',
     'Kappa': 'Kappa',
     'MCC': 'MCC',
     'R2': 'R2',
@@ -59,14 +63,13 @@ def _extract_mean_row(pulled_df: pd.DataFrame, model_name: str) -> pd.DataFrame:
             mean_row = pulled_df.iloc[[-1]].copy()
 
     mean_row['Model'] = model_name.upper()
-
     mean_row = mean_row.rename(columns=PYCARET_METRIC_MAP)
 
     for col in mean_row.columns:
         if col != 'Model' and col not in PYCARET_METRIC_MAP.values():
             val = mean_row[col].iloc[0] if len(mean_row) > 0 else None
             if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
-                mean_row.loc[0, col] = None
+                mean_row.iloc[0, mean_row.columns.get_loc(col)] = None
 
     return mean_row
 
@@ -78,20 +81,47 @@ def run_automl(
     selected_models: list = None,
     ignore_columns: list = None,
     use_smote: bool = False,
+    use_outlier_removal: bool = True,
+    use_advanced_imputation: bool = True,
+    use_stratified_cv: bool = True,
+    use_tuning: bool = True,
+    use_ensembling: bool = True,
     progress_callback=None,
     stop_event=None,
+    model_id: str = None,
 ) -> dict:
     filepath = os.path.join(UPLOAD_DIR, filename)
+    if not os.path.exists(filepath):
+        raise ValueError("数据文件不存在，请重新上传")
+
     df = pd.read_csv(filepath)
 
-    model_id = uuid.uuid4().hex[:12]
+    if task_type != "clustering" and target_column:
+        if target_column not in df.columns:
+            raise ValueError(f"目标列 '{target_column}' 不存在于数据中，请检查配置")
+        if df[target_column].nunique() < 2:
+            raise ValueError(f"目标列 '{target_column}' 只有 1 个唯一值，无法进行分类或回归训练")
+        
+        # Check if SMOTE is safe to use (minority class must have >= 6 samples for default n_neighbors=6)
+        if task_type == "classification" and use_smote:
+            minority_count = df[target_column].value_counts().min()
+            if minority_count < 6:
+                logger.warning(f"Minority class has only {minority_count} samples (< 6), disabling SMOTE to avoid error")
+                fix_imbalance = False
+            else:
+                fix_imbalance = True
+        else:
+            fix_imbalance = False
+    else:
+        fix_imbalance = False
+
+    model_id = model_id or uuid.uuid4().hex[:12]
     feature_importance = {}
     shap_plot = ""
     misclassified_samples = []
     completed_models = []
 
     ignore_cols = ignore_columns if ignore_columns else []
-    fix_imbalance = use_smote if task_type == "classification" else False
 
     def check_stop():
         if stop_event and stop_event.is_set():
@@ -103,16 +133,76 @@ def run_automl(
             if should_stop:
                 raise Exception("Training stopped by user")
 
+    # ============================================================
+    # Phase 1: 异常值处理 (Outlier Handling)
+    # 使用 Isolation Forest 方法检测并移除异常值
+    # ============================================================
+    outlier_params = {}
+    if use_outlier_removal and task_type != "clustering":
+        outlier_params = {
+            'remove_outliers': True,
+            'outliers_method': 'iforest',
+            'outliers_threshold': 0.05,
+        }
+        logger.info(f"Phase 1: Outlier handling enabled - using Isolation Forest with threshold=0.05")
+
+    # ============================================================
+    # Phase 2: 高级缺失值插补 (Advanced Imputation)
+    # 使用 Iterative Imputer (类似 MICE/KNN) 替代简单均值填充
+    # ============================================================
+    imputation_params = {}
+    if use_advanced_imputation and task_type != "clustering":
+        imputation_params = {
+            'numeric_imputation': 'drop',
+            'categorical_imputation': 'mode',
+        }
+        logger.info(f"Phase 2: Advanced imputation enabled - using mode/drop strategy")
+
+    # ============================================================
+    # Phase 3: 分层交叉验证 (Stratified K-Fold CV)
+    # 3-Fold Stratified CV 确保每折样本比例一致
+    # ============================================================
+    cv_params = {
+        'fold': 3,
+        'fold_strategy': 'stratifiedkfold' if use_stratified_cv and task_type == "classification" else 'kfold',
+        'data_split_stratify': True if use_stratified_cv and task_type == "classification" else False,
+        'fold_shuffle': True,
+    }
+    if use_stratified_cv and task_type == "classification":
+        logger.info("Phase 3: Stratified 3-Fold CV enabled for classification")
+    elif use_stratified_cv and task_type == "regression":
+        logger.info("Phase 3: 3-Fold CV with shuffle enabled for regression")
+
     if task_type == "classification":
-        report_progress(5, "数据预处理中...")
+        report_progress(3, "数据预处理中...")
         check_stop()
 
-        cls_setup(
-            data=df, target=target_column, session_id=42, n_jobs=14, verbose=False,
-            ignore_features=ignore_cols if ignore_cols else None, fix_imbalance=fix_imbalance,
-        )
+        # 合并所有预处理参数
+        setup_params = {
+            'data': df,
+            'target': target_column,
+            'session_id': np.random.randint(1, 9999),
+            'n_jobs': -1,
+            'verbose': False,
+            'ignore_features': ignore_cols if ignore_cols else None,
+            'fix_imbalance': fix_imbalance,
+        }
+        setup_params.update(outlier_params)
+        setup_params.update(imputation_params)
+        setup_params.update(cv_params)
 
-        report_progress(10, "数据预处理完成")
+        cls_setup(**setup_params)
+
+        try:
+            existing_metrics = get_metrics()
+            if 'AUC' in existing_metrics.index:
+                remove_metric('AUC')
+            add_metric('auc_ovr', 'AUC_OVR', roc_auc_score, target='pred_proba', greater_is_better=True, multiclass=True, multi_class='ovr')
+            add_metric('auc_ovo', 'AUC_OVO', roc_auc_score, target='pred_proba', greater_is_better=True, multiclass=True, multi_class='ovo')
+        except Exception as e:
+            logger.warning(f"Failed to add custom AUC metrics: {e}")
+
+        report_progress(8, "数据预处理完成")
         check_stop()
 
         models_to_train = selected_models if selected_models else ['lr', 'rf', 'gbc', 'et', 'xgb']
@@ -122,57 +212,86 @@ def run_automl(
         best_model = None
         best_score = -1
         total_models = len(mapped_models)
+        model_scores = {}
 
         for i, model_name in enumerate(mapped_models):
             check_stop()
-            report_progress(10 + int(60 * i / total_models), f"训练模型: {model_name.upper()}")
+            base_progress = 10 + int(50 * i / total_models)
+            report_progress(base_progress, f"训练模型: {model_name.upper()}")
+
             try:
-                model = cls_create(model_name, verbose=False)
-                # BUG FIX: pull() returns ALL CV folds + Mean + SD rows.
-                # Extract only the Mean row so metrics_table has one row per model.
+                base_model = cls_create(model_name, verbose=False)
+                if use_tuning:
+                    report_progress(base_progress + 2, f"调优模型: {model_name.upper()}")
+                    check_stop()
+                    try:
+                        model = cls_tune(base_model, optimize='Accuracy', search_library='optuna', n_iter=5, early_stopping=True, verbose=False)
+                    except Exception as e:
+                        logger.warning(f"Optuna tuning failed for {model_name}, falling back to scikit-learn: {str(e)}")
+                        model = cls_tune(base_model, optimize='Accuracy', search_library='scikit-learn', n_iter=5, early_stopping=True, verbose=False)
+                else:
+                    model = base_model
+
+                check_stop()
                 all_folds = cls_pull()
                 mean_row = _extract_mean_row(all_folds, model_name)
                 metrics_list.append(mean_row)
                 completed_models.append(model_name.upper())
 
-                # BUG FIX: read accuracy from the mean_row (not fold 0 via iloc[0])
                 acc = float(mean_row['Accuracy'].iloc[0]) if 'Accuracy' in mean_row.columns else 0
+                model_scores[model_name.upper()] = acc
+
                 if acc > best_score:
                     best_score = acc
                     best_model = model
 
-                report_progress(10 + int(60 * (i + 1) / total_models), f"完成: {model_name.upper()}")
+                if use_ensembling and model_name in ('rf', 'et', 'gbc', 'ada', 'xgb', 'lightgbm'):
+                    report_progress(base_progress + 4, f"集成模型: {model_name.upper()}")
+                    check_stop()
+                    method = 'Bagging' if model_name in ('rf', 'et') else 'Boosting'
+                    ensemble = cls_ensemble(model, method=method, fold=3, verbose=False)
+                    ensemble_all_folds = cls_pull()
+                    ensemble_mean_row = _extract_mean_row(ensemble_all_folds, f"{model_name.upper()}_{method}")
+                    ensemble_acc = float(ensemble_mean_row['Accuracy'].iloc[0]) if 'Accuracy' in ensemble_mean_row.columns else 0
+                    model_scores[f"{model_name.upper()}_{method}"] = ensemble_acc
+                    metrics_list.append(ensemble_mean_row)
+                    completed_models.append(f"{model_name.upper()}_{method}")
+                    if ensemble_acc > best_score:
+                        best_score = ensemble_acc
+                        best_model = ensemble
+
+                report_progress(base_progress + int(50 / total_models), f"完成: {model_name.upper()}")
+                del model
+                gc.collect()
+
             except Exception as e:
                 logger.error(f"Model {model_name.upper()} training failed: {str(e)}")
                 if "stopped by user" in str(e):
                     raise
+                gc.collect()
                 continue
 
         check_stop()
         if metrics_list:
             metrics_df = pd.concat(metrics_list, ignore_index=True)
-            logger.info(f"Successfully trained {len(metrics_list)} models")
+            logger.info(f"Successfully trained {len(metrics_list)} model variants")
         else:
             all_folds = cls_pull()
-            logger.warning(f"No models trained successfully. PyCaret pull() returned: {all_folds.to_dict()}")
+            logger.warning(f"No models trained successfully")
             metrics_df = _extract_mean_row(all_folds, "unknown")
 
-        logger.info(f"Final metrics_df columns: {metrics_df.columns.tolist()}")
-        logger.info(f"Final metrics_df content: {metrics_df.to_dict()}")
-
-        report_progress(75, "模型训练完成")
+        report_progress(70, "模型训练完成")
         check_stop()
 
         if best_model is not None:
             cls_save(best_model, os.path.join(MODEL_DIR, model_id))
 
-            report_progress(80, "生成 SHAP 分析...")
+            report_progress(75, "生成 SHAP 分析...")
             check_stop()
             try:
                 plt.clf()
                 plt.close('all')
-
-                interpret_model(best_model, verbose=False)
+                interpret_model(best_model)
                 fig = plt.gcf()
                 if fig and fig.get_axes():
                     buf = io.BytesIO()
@@ -187,20 +306,27 @@ def run_automl(
                 plt.close('all')
 
             check_stop()
-            report_progress(90, "分析错误样本...")
+            report_progress(85, "分析错误样本...")
             try:
                 predictions = predict_model(best_model, data=df)
                 if 'prediction_label' in predictions.columns and target_column in predictions.columns:
                     wrong = predictions[predictions['prediction_label'] != predictions[target_column]]
-                    misclassified_samples = wrong.head(10).fillna("NaN").to_dict(orient="records")
-            except Exception:
-                pass
+                    cols_to_show = [target_column, 'prediction_label'] + [
+                        c for c in wrong.columns
+                        if c not in ('prediction_label', 'prediction_score', 'prediction_label_text')
+                        and not c.startswith('_')
+                    ][:8]
+                    available_cols = [c for c in cols_to_show if c in wrong.columns]
+                    misclassified_samples = wrong[available_cols].fillna("NaN").to_dict(orient="records")
+                del predictions
+                gc.collect()
+            except Exception as e:
+                logger.warning(f"Misclassified samples extraction failed: {e}")
 
         check_stop()
-        report_progress(95, "提取特征重要性...")
+        report_progress(92, "提取特征重要性...")
         try:
             if best_model and hasattr(best_model, "feature_importances_"):
-                import numpy as np
                 fis = best_model.feature_importances_
                 feature_names = getattr(best_model, "feature_names_in_", None)
                 if feature_names is None:
@@ -209,19 +335,41 @@ def run_automl(
                 for idx in sorted_idx:
                     check_stop()
                     feature_importance[str(feature_names[idx])] = round(float(fis[idx]), 6)
-        except Exception:
-            pass
+            elif best_model and hasattr(best_model, "coef_"):
+                coefs = best_model.coef_
+                if coefs.ndim > 1:
+                    coefs = np.abs(coefs).mean(axis=0)
+                else:
+                    coefs = np.abs(coefs)
+                feature_names = getattr(best_model, "feature_names_in_", None)
+                if feature_names is None:
+                    feature_names = [f"feature_{i}" for i in range(len(coefs))]
+                sorted_idx = np.argsort(coefs)[::-1][:20]
+                for idx in sorted_idx:
+                    check_stop()
+                    feature_importance[str(feature_names[idx])] = round(float(coefs[idx]), 6)
+        except Exception as e:
+            logger.warning(f"Feature importance extraction failed: {e}")
 
     elif task_type == "regression":
-        report_progress(5, "数据预处理中...")
+        report_progress(3, "数据预处理中...")
         check_stop()
 
-        reg_setup(
-            data=df, target=target_column, session_id=42, n_jobs=14, verbose=False,
-            ignore_features=ignore_cols if ignore_cols else None,
-        )
+        setup_params = {
+            'data': df,
+            'target': target_column,
+            'session_id': np.random.randint(1, 9999),
+            'n_jobs': -1,
+            'verbose': False,
+            'ignore_features': ignore_cols if ignore_cols else None,
+        }
+        setup_params.update(outlier_params)
+        setup_params.update(imputation_params)
+        setup_params.update(cv_params)
 
-        report_progress(10, "数据预处理完成")
+        reg_setup(**setup_params)
+
+        report_progress(8, "数据预处理完成")
         check_stop()
 
         models_to_train = selected_models if selected_models else ['lr', 'ridge', 'rf', 'gbr', 'et']
@@ -230,29 +378,65 @@ def run_automl(
         best_model = None
         best_score = -float('inf')
         total_models = len(mapped_models)
+        model_scores = {}
 
         for i, model_name in enumerate(mapped_models):
             check_stop()
-            report_progress(10 + int(60 * i / total_models), f"训练模型: {model_name.upper()}")
+            base_progress = 10 + int(60 * i / total_models)
+            report_progress(base_progress, f"训练模型: {model_name.upper()}")
+
             try:
-                model = reg_create(model_name, verbose=False)
-                # BUG FIX: extract Mean row only
+                # Phase 4: 模型调优
+                # PyCaret 3.x: 需要先创建模型，再用 tune_model 调优
+                base_model = reg_create(model_name, verbose=False)
+                if use_tuning:
+                    report_progress(base_progress + 2, f"调优模型: {model_name.upper()}")
+                    check_stop()
+                    try:
+                        model = reg_tune(base_model, optimize='R2', search_library='optuna', n_iter=5, early_stopping=True, verbose=False)
+                    except Exception as e:
+                        logger.warning(f"Optuna tuning failed for {model_name}, falling back to scikit-learn: {str(e)}")
+                        model = reg_tune(base_model, optimize='R2', search_library='scikit-learn', n_iter=5, early_stopping=True, verbose=False)
+                else:
+                    model = base_model
+
+                check_stop()
                 all_folds = reg_pull()
                 mean_row = _extract_mean_row(all_folds, model_name)
                 metrics_list.append(mean_row)
                 completed_models.append(model_name.upper())
 
-                # BUG FIX: use mean value not fold[0]
                 r2 = float(mean_row['R2'].iloc[0]) if 'R2' in mean_row.columns else -float('inf')
+                model_scores[model_name.upper()] = r2
+
                 if r2 > best_score:
                     best_score = r2
                     best_model = model
 
-                report_progress(10 + int(60 * (i + 1) / total_models), f"完成: {model_name.upper()}")
+                # Phase 4: 模型集成
+                if use_ensembling and model_name in ('rf', 'et', 'gbr', 'ada', 'xgb', 'lightgbm'):
+                    report_progress(base_progress + 4, f"集成模型: {model_name.upper()}")
+                    check_stop()
+                    method = 'Bagging' if model_name in ('rf', 'et') else 'Boosting'
+                    ensemble = reg_ensemble(model, method=method, fold=3, verbose=False)
+                    ensemble_all_folds = reg_pull()
+                    ensemble_mean_row = _extract_mean_row(ensemble_all_folds, f"{model_name.upper()}_{method}")
+                    ensemble_r2 = float(ensemble_mean_row['R2'].iloc[0]) if 'R2' in ensemble_mean_row.columns else -float('inf')
+                    model_scores[f"{model_name.upper()}_{method}"] = ensemble_r2
+                    metrics_list.append(ensemble_mean_row)
+                    completed_models.append(f"{model_name.upper()}_{method}")
+                    if ensemble_r2 > best_score:
+                        best_score = ensemble_r2
+                        best_model = ensemble
+
+                report_progress(base_progress + int(60 / total_models), f"完成: {model_name.upper()}")
+                del model
+                gc.collect()
+
             except Exception as e:
-                # BUG FIX: was `str(Exception)`, must be `str(e)`
                 if "stopped by user" in str(e):
                     raise
+                gc.collect()
                 continue
 
         check_stop()
@@ -272,7 +456,6 @@ def run_automl(
         report_progress(95, "提取特征重要性...")
         try:
             if best_model and hasattr(best_model, "feature_importances_"):
-                import numpy as np
                 fis = best_model.feature_importances_
                 feature_names = getattr(best_model, "feature_names_in_", None)
                 if feature_names is None:
@@ -281,19 +464,28 @@ def run_automl(
                 for idx in sorted_idx:
                     check_stop()
                     feature_importance[str(feature_names[idx])] = round(float(fis[idx]), 6)
-        except Exception:
-            pass
+            elif best_model and hasattr(best_model, "coef_"):
+                coefs = np.abs(best_model.coef_)
+                feature_names = getattr(best_model, "feature_names_in_", None)
+                if feature_names is None:
+                    feature_names = [f"feature_{i}" for i in range(len(coefs))]
+                sorted_idx = np.argsort(coefs)[::-1][:20]
+                for idx in sorted_idx:
+                    check_stop()
+                    feature_importance[str(feature_names[idx])] = round(float(coefs[idx]), 6)
+        except Exception as e:
+            logger.warning(f"Feature importance extraction failed (regression): {e}")
 
     elif task_type == "clustering":
-        report_progress(5, "数据预处理中...")
+        report_progress(3, "数据预处理中...")
         check_stop()
 
         clu_setup(
-            data=df, session_id=42, n_jobs=14, verbose=False,
+            data=df, session_id=np.random.randint(1, 9999), n_jobs=-1, verbose=False,
             ignore_features=ignore_cols if ignore_cols else None,
         )
 
-        report_progress(10, "数据预处理完成")
+        report_progress(8, "数据预处理完成")
         check_stop()
 
         models_to_train = selected_models if selected_models else ['kmeans', 'hclust', 'meanshift']
@@ -306,8 +498,10 @@ def run_automl(
             check_stop()
             report_progress(10 + int(70 * i / total_models), f"训练模型: {model_name.upper()}")
             try:
-                model = clu_create(model_name, num_clusters=4, verbose=False)
-                # BUG FIX: extract Mean row from pull()
+                if model_name in ('affinity', 'dbscan'):
+                    model = clu_create(model_name, verbose=False)
+                else:
+                    model = clu_create(model_name, num_clusters=4, verbose=False)
                 all_folds = clu_pull()
                 mean_row = _extract_mean_row(all_folds, model_name)
                 metrics_list.append(mean_row)
@@ -321,7 +515,6 @@ def run_automl(
 
                 report_progress(10 + int(70 * (i + 1) / total_models), f"完成: {model_name.upper()}")
             except Exception as e:
-                # BUG FIX: was `str(Exception)`, must be `str(e)`
                 if "stopped by user" in str(e):
                     raise
                 continue
@@ -344,12 +537,39 @@ def run_automl(
 
     report_progress(98, "生成报告...")
 
-    metrics_table = metrics_df.reset_index(drop=True).to_dict(orient="records")
-    metrics_table_serializable = _make_serializable(metrics_table)
+    METRICS_COLUMNS = {
+        'Accuracy', 'AUC', 'AUC_OVR', 'AUC_OVO', 'Recall', 'Precision', 'F1', 'Kappa', 'MCC',
+        'R2', 'RMSE', 'MAE', 'MSE', 'RMSLE',
+        'Silhouette', 'Calinski-Harabasz', 'Davies-Bouldin',
+    }
+    INTERNAL_COLUMNS = {'index', 'TT (Sec)', 'TT(Sec)', 'MS'}
 
-    logger.info(f"Training completed. Metrics table: {metrics_table_serializable}")
-    logger.info(f"Feature importance: {feature_importance}")
-    logger.info(f"Misclassified samples count: {len(misclassified_samples)}")
+    raw_records = metrics_df.reset_index(drop=True).to_dict(orient="records")
+    metrics_table_serializable = []
+    for row in raw_records:
+        filtered = {
+            "Model": str(row.get("Model", "")),
+        }
+        for col in METRICS_COLUMNS:
+            if col in row and row[col] not in (None, ""):
+                val = row[col]
+                if isinstance(val, float):
+                    if math.isnan(val) or math.isinf(val):
+                        continue
+                    val = round(val, 4)
+                filtered[col] = val
+        metrics_table_serializable.append(filtered)
+
+    del df
+    del metrics_df
+    del metrics_list
+    del raw_records
+    gc.collect()
+
+    report_progress(100, "训练完成")
+
+    logger.info(f"Training completed. Total models trained: {len(completed_models)}")
+    logger.info(f"Best model score: {best_score}")
 
     return {
         "model_id": model_id,

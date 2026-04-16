@@ -1,4 +1,5 @@
 import { useAppStore } from './store';
+import { I18nProvider } from './i18n/index';
 import Header from './components/Header';
 import Stepper from './components/Stepper';
 import StepUpload from './components/StepUpload';
@@ -14,43 +15,41 @@ function App() {
 
   const renderStep = () => {
     switch (step) {
-      case 0:
-        return <StepUpload />;
-      case 1:
-        return <StepConfig />;
-      case 2:
-        return <StepTrain />;
-      case 3:
-        return <StepEvaluate />;
-      case 4:
-        return <StepExport />;
-      default:
-        return <StepUpload />;
+      case 0: return <StepUpload />;
+      case 1: return <StepConfig />;
+      case 2: return <StepTrain />;
+      case 3: return <StepEvaluate />;
+      case 4: return <StepExport />;
+      default: return <StepUpload />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-      <Stepper />
-      <main className="px-4 pb-12">
-        {error && (
-          <div className="max-w-2xl mx-auto mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
-            <span className="text-red-500 text-lg">⚠️</span>
-            <div className="flex-1">
-              <p className="text-red-700 text-sm font-medium">{error}</p>
+    <I18nProvider>
+      <div className="min-h-screen bg-[#f8f9fa]">
+        <Header />
+        <Stepper />
+        <main className="px-4 pb-16">
+          {error && (
+            <div className="max-w-xl mx-auto mb-6 p-4 glass-card rounded-xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-amber-600">⚠️</span>
+                <p className="text-sm text-gray-700">{error}</p>
+              </div>
+              <button
+                onClick={() => setError(null)}
+                className="text-gray-400 hover:text-gray-600 text-lg leading-none transition-colors"
+              >
+                ×
+              </button>
             </div>
-            <button
-              onClick={() => setError(null)}
-              className="text-red-400 hover:text-red-600 text-lg leading-none"
-            >
-              ×
-            </button>
+          )}
+          <div className="animate-in fade-in duration-500">
+            {renderStep()}
           </div>
-        )}
-        {renderStep()}
-      </main>
-    </div>
+        </main>
+      </div>
+    </I18nProvider>
   );
 }
 

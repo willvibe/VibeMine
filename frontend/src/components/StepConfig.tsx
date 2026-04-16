@@ -1,403 +1,286 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '../store';
-import ReactMarkdown from 'react-markdown';
-
-const ALL_MODELS: Record<string, { id: string; name: string }[]> = {
-  classification: [
-    { id: 'lr', name: 'Logistic Regression' },
-    { id: 'rf', name: 'Random Forest' },
-    { id: 'gbc', name: 'Gradient Boosting' },
-    { id: 'et', name: 'Extra Trees' },
-    { id: 'xgb', name: 'Extreme Gradient Boosting (XGBoost)' },
-    { id: 'lightgbm', name: 'Light GBM' },
-    { id: 'dt', name: 'Decision Tree' },
-    { id: 'knn', name: 'K Neighbors' },
-    { id: 'ada', name: 'Ada Boost' },
-    { id: 'lda', name: 'Linear Discriminant Analysis' },
-    { id: 'qda', name: 'Quadratic Discriminant Analysis' },
-    { id: 'nb', name: 'Naive Bayes' },
-    { id: 'svm', name: 'SVM (Linear)' },
-    { id: 'ridge', name: 'Ridge Classifier' },
-  ],
-  regression: [
-    { id: 'lr', name: 'Linear Regression' },
-    { id: 'ridge', name: 'Ridge' },
-    { id: 'lasso', name: 'Lasso' },
-    { id: 'rf', name: 'Random Forest' },
-    { id: 'et', name: 'Extra Trees' },
-    { id: 'gbr', name: 'Gradient Boosting' },
-    { id: 'lightgbm', name: 'Light GBM' },
-    { id: 'xgb', name: 'Extreme Gradient Boosting' },
-    { id: 'dt', name: 'Decision Tree' },
-    { id: 'knn', name: 'K Neighbors' },
-    { id: 'svm', name: 'SVM' },
-  ],
-  clustering: [
-    { id: 'kmeans', name: 'K-Means' },
-    { id: 'hclust', name: 'Hierarchical Clustering' },
-    { id: 'meanshift', name: 'Mean Shift' },
-    { id: 'dbscan', name: 'DBSCAN' },
-    { id: 'affinity', name: 'Affinity Propagation' },
-  ],
+import { useI18n } from '../i18n/index';
+const TASK_MODELS: Record<string, string[]> = {
+  classification: ['lr', 'rf', 'gbc', 'et', 'xgb', 'lightgbm', 'dt', 'knn', 'ada', 'lda', 'nb', 'qda'],
+  regression: ['lr', 'ridge', 'lasso', 'en', 'rf', 'et', 'gbr', 'lightgbm', 'knn', 'dt'],
+  clustering: ['kmeans', 'hclust', 'dbscan', 'meanshift', 'affinity'],
 };
 
-const DEFAULT_MODELS: Record<string, string[]> = {
-  classification: ['lr', 'rf', 'gbc', 'et', 'xgb'],
-  regression: ['lr', 'ridge', 'rf', 'gbr', 'et'],
-  clustering: ['kmeans', 'hclust', 'meanshift'],
+const MODEL_LABELS: Record<string, string> = {
+  lr: 'Logistic Regression', rf: 'Random Forest', gbc: 'Gradient Boosting', et: 'Extra Trees',
+  xgb: 'XGBoost', lightgbm: 'LightGBM', dt: 'Decision Tree', knn: 'KNN', ada: 'AdaBoost',
+  lda: 'LDA', nb: 'Naive Bayes', qda: 'QDA',
+  lasso: 'Lasso', en: 'ElasticNet', ridge: 'Ridge', gbr: 'Gradient Boosting Regressor',
+  kmeans: 'K-Means', hclust: 'Hierarchical', dbscan: 'DBSCAN', meanshift: 'Mean Shift', affinity: 'Affinity',
 };
+
+const REGRESSION_MODEL_LABELS: Record<string, string> = {
+  lr: 'Linear Regression', ridge: 'Ridge Regression', lasso: 'Lasso Regression',
+  en: 'ElasticNet', rf: 'Random Forest', et: 'Extra Trees', gbr: 'Gradient Boosting Regressor',
+  lightgbm: 'LightGBM', knn: 'KNN', dt: 'Decision Tree',
+};
+
+function getModelLabel(key: string, taskType: string): string {
+  if (taskType === 'regression' && REGRESSION_MODEL_LABELS[key]) {
+    return REGRESSION_MODEL_LABELS[key];
+  }
+  return MODEL_LABELS[key] || key;
+}
 
 export default function StepConfig() {
-  const columns = useAppStore((s) => s.columns);
-  const shape = useAppStore((s) => s.shape);
-  const preview = useAppStore((s) => s.preview);
-  const aiInsight = useAppStore((s) => s.aiInsight);
-  const columnDetails = useAppStore((s) => s.columnDetails);
-  const taskType = useAppStore((s) => s.taskType);
-  const targetColumn = useAppStore((s) => s.targetColumn);
-  const selectedModels = useAppStore((s) => s.selectedModels);
-  const ignoreColumns = useAppStore((s) => s.ignoreColumns);
-  const useSmote = useAppStore((s) => s.useSmote);
-  const imbalanceDetected = useAppStore((s) => s.imbalanceDetected);
-  const imbalanceRatio = useAppStore((s) => s.imbalanceRatio);
-  const setTaskType = useAppStore((s) => s.setTaskType);
-  const setTargetColumn = useAppStore((s) => s.setTargetColumn);
-  const setSelectedModels = useAppStore((s) => s.setSelectedModels);
-  const setIgnoreColumns = useAppStore((s) => s.setIgnoreColumns);
-  const setUseSmote = useAppStore((s) => s.setUseSmote);
-  const setStep = useAppStore((s) => s.setStep);
+  const { t } = useI18n();
+  const {
+    filename, columns, taskType, targetColumn, selectedModels,
+    ignoreColumns, useSmote, setTaskType, setTargetColumn, setSelectedModels,
+    setIgnoreColumns, setUseSmote,
+    setStep,
+  } = useAppStore();
 
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showIgnoreSelect, setShowIgnoreSelect] = useState(false);
+  const [classDistribution, setClassDistribution] = useState<{ value: string; count: number; pct: number }[]>([]);
 
-  const handleTaskTypeChange = (type: string) => {
-    setTaskType(type);
-    if (type === 'clustering') {
-      setTargetColumn('');
-    }
-    setSelectedModels(DEFAULT_MODELS[type] || []);
-  };
+  useEffect(() => {
+    if (targetColumn && taskType === 'classification') {
+      const classDist = useAppStore.getState().classDistributions?.[targetColumn];
+      if (classDist) {
+        const total = Object.values(classDist).reduce((a, b) => a + b, 0);
+        const dist = Object.entries(classDist)
+          .map(([value, count]) => ({ value, count, pct: total > 0 ? count / total : 0 }))
+          .sort((a, b) => b.count - a.count);
+        setClassDistribution(dist);
 
-  const toggleModel = (modelId: string) => {
-    if (selectedModels.includes(modelId)) {
-      if (selectedModels.length > 1) {
-        setSelectedModels(selectedModels.filter((m) => m !== modelId));
+        // Auto-enable SMOTE if imbalanced (ratio > 2:1) - classification only
+        if (taskType === 'classification' && dist.length >= 2 && total > 0) {
+          const ratio = dist[0].count / (dist[dist.length - 1].count || 1);
+          if (ratio > 2) {
+            setUseSmote(true);
+          }
+        }
       }
     } else {
-      setSelectedModels([...selectedModels, modelId]);
+      setClassDistribution([]);
+    }
+  }, [targetColumn, taskType]);
+
+  const suggestedModels = TASK_MODELS[taskType] || [];
+  const isClustering = taskType === 'clustering';
+
+  const handleModelToggle = (model: string) => {
+    if (selectedModels.includes(model)) {
+      setSelectedModels(selectedModels.filter(m => m !== model));
+    } else {
+      setSelectedModels([...selectedModels, model]);
     }
   };
 
-  const toggleIgnoreColumn = (col: string) => {
+  const handleSelectAll = () => setSelectedModels([...suggestedModels]);
+  const handleClearAll = () => setSelectedModels([]);
+  const handleDefaultModels = () => {
+    const defaults = taskType === 'classification'
+      ? ['lr', 'rf', 'gbc', 'et', 'xgb']
+      : taskType === 'regression'
+      ? ['lr', 'rf', 'et']
+      : ['kmeans', 'hclust'];
+    setSelectedModels(defaults);
+  };
+
+  const handleIgnoreToggle = (col: string) => {
     if (ignoreColumns.includes(col)) {
-      setIgnoreColumns(ignoreColumns.filter((c) => c !== col));
+      setIgnoreColumns(ignoreColumns.filter(c => c !== col));
     } else {
       setIgnoreColumns([...ignoreColumns, col]);
     }
   };
 
-  const selectAllModels = () => {
-    setSelectedModels(ALL_MODELS[taskType].map((m) => m.id));
+  const handleStartTraining = () => {
+    if (!filename) return;
+    if (selectedModels.length === 0) {
+      alert(t('models') + ': please select at least one model');
+      return;
+    }
+    if (!isClustering && !targetColumn) {
+      alert(t('targetCol') + ': please select a target column');
+      return;
+    }
+    setStep(2);
   };
 
-  const selectDefaultModels = () => {
-    setSelectedModels(DEFAULT_MODELS[taskType] || []);
-  };
-
-  const canProceed = taskType === 'clustering' || targetColumn !== '';
-
-  const selectableColumns = columns.filter((col) => col !== targetColumn);
+  const canUseSmote = taskType === 'classification' && targetColumn && !isClustering;
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">数据概览与任务配置</h2>
+    <div className="max-w-3xl mx-auto space-y-8">
+      <div>
+        <h2 className="text-3xl font-semibold tracking-tight text-gray-900">{t('stepConfig')}</h2>
+        <p className="text-sm text-gray-500 mt-1">{filename}</p>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <h3 className="text-lg font-semibold text-gray-700 mb-3 flex items-center gap-2">
-              <span className="text-indigo-500">📋</span> 数据预览
-              <span className="text-sm font-normal text-gray-400">
-                {shape[0]} 行 × {shape[1]} 列
-              </span>
-            </h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50">
-                    {columns.map((col) => (
-                      <th key={col} className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">
-                        {col}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.map((row, i) => (
-                    <tr key={i} className="border-t border-gray-100">
-                      {columns.map((col) => (
-                        <td key={col} className="px-3 py-2 text-gray-500 whitespace-nowrap max-w-[150px] truncate">
-                          {String(row[col] ?? '')}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <h3 className="text-lg font-semibold text-gray-700 mb-3 flex items-center gap-2">
-              <span className="text-indigo-500">📊</span> 列统计信息
-            </h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="px-3 py-2 text-left font-medium text-gray-600">列名</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-600">类型</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-600">缺失</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-600">唯一值</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {columnDetails.map((col) => (
-                    <tr key={col.name} className="border-t border-gray-100">
-                      <td className="px-3 py-2 font-medium text-gray-700">{col.name}</td>
-                      <td className="px-3 py-2 text-gray-500">{col.dtype}</td>
-                      <td className="px-3 py-2">
-                        {col.missing_count > 0 ? (
-                          <span className="text-red-500 font-medium">
-                            {col.missing_count} ({(col.missing_ratio * 100).toFixed(1)}%)
-                          </span>
-                        ) : (
-                          <span className="text-green-500">0</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-gray-500">{col.unique_count}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl border border-indigo-100 p-5 shadow-sm">
-            <h3 className="text-lg font-semibold text-indigo-700 mb-3 flex items-center gap-2">
-              <span>🤖</span> AI 智能建议
-            </h3>
-            <div className="prose prose-sm prose-indigo max-w-none text-gray-700">
-              <ReactMarkdown>{aiInsight}</ReactMarkdown>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <h3 className="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
-              <span className="text-indigo-500">⚙️</span> 任务配置
-            </h3>
-
-            <div className="space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-2">任务类型</label>
-                <div className="flex gap-3">
-                  {[
-                    { value: 'classification', label: '分类', icon: '🏷️' },
-                    { value: 'regression', label: '回归', icon: '📈' },
-                    { value: 'clustering', label: '聚类', icon: '🎯' },
-                  ].map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => handleTaskTypeChange(opt.value)}
-                      className={`flex-1 py-3 px-4 rounded-xl border-2 font-medium transition-all duration-200 ${
-                        taskType === opt.value
-                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm'
-                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
-                      }`}
-                    >
-                      <span className="mr-2">{opt.icon}</span>
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {taskType !== 'clustering' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-2">目标列 (Target)</label>
-                <select
-                  value={targetColumn}
-                  onChange={(e) => setTargetColumn(e.target.value)}
-                  className="w-full py-3 px-4 rounded-xl border-2 border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all text-gray-700 bg-white"
-                >
-                  <option value="">-- 请选择目标列 --</option>
-                  {columns.map((col) => (
-                    <option key={col} value={col}>
-                      {col}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              )}
-
-              {taskType === 'clustering' && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <p className="text-sm text-amber-700">
-                  <span className="font-medium">💡 聚类说明：</span>聚类是一种无监督学习任务，无需指定目标列。系统将自动发现数据中的自然分组。
-                </p>
-              </div>
-              )}
-
-              {/* BUG FIX: only show SMOTE block when imbalance is actually detected */}
-              {taskType === 'classification' && imbalanceDetected && (
-              <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-orange-700 font-medium">⚠️ 样本不平衡检测</p>
-                    <p className="text-xs text-orange-600 mt-1">
-                      系统检测到类别比例约为 {imbalanceRatio}:1
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={useSmote}
-                      onChange={(e) => setUseSmote(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
-                  </label>
-                </div>
-                <p className="text-xs text-orange-600 mt-2">
-                  {useSmote ? '✓ 已开启 SMOTE 过采样' : '开启后将使用 SMOTE 自动平衡样本'}
-                </p>
-              </div>
-              )}
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-600">
-                    忽略的列 ({ignoreColumns.length}个)
-                  </label>
-                  <button
-                    onClick={() => setShowIgnoreSelect(!showIgnoreSelect)}
-                    className="text-sm text-indigo-600 hover:text-indigo-700"
-                  >
-                    {showIgnoreSelect ? '收起 ▲' : '设置 ▼'}
-                  </button>
-                </div>
-
-                {showIgnoreSelect && (
-                  <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 max-h-40 overflow-y-auto">
-                    <div className="flex flex-wrap gap-2">
-                      {selectableColumns.map((col) => (
-                        <label
-                          key={col}
-                          className={`flex items-center gap-1 px-2 py-1 rounded cursor-pointer text-sm transition-colors ${
-                            ignoreColumns.includes(col)
-                              ? 'bg-red-100 text-red-700 border border-red-200'
-                              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={ignoreColumns.includes(col)}
-                            onChange={() => toggleIgnoreColumn(col)}
-                            className="sr-only"
-                          />
-                          {col}
-                        </label>
-                      ))}
-                    </div>
-                    {ignoreColumns.length > 0 && (
-                      <button
-                        onClick={() => setIgnoreColumns([])}
-                        className="mt-2 text-xs text-gray-500 hover:text-gray-700"
-                      >
-                        清除全部
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-600">
-                    参与训练的算法 ({selectedModels.length}个)
-                  </label>
-                  <button
-                    onClick={() => setShowAdvanced(!showAdvanced)}
-                    className="text-sm text-indigo-600 hover:text-indigo-700"
-                  >
-                    {showAdvanced ? '收起 ▲' : '展开 ▼'}
-                  </button>
-                </div>
-
-                {showAdvanced && (
-                  <div className="space-y-3 mt-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <div className="flex gap-2 mb-2">
-                      <button
-                        onClick={selectDefaultModels}
-                        className="px-3 py-1 text-xs bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200"
-                      >
-                        默认5个
-                      </button>
-                      <button
-                        onClick={selectAllModels}
-                        className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                      >
-                        全选
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
-                      {ALL_MODELS[taskType]?.map((model) => (
-                        <label
-                          key={model.id}
-                          className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
-                            selectedModels.includes(model.id)
-                              ? 'bg-indigo-50 border border-indigo-200'
-                              : 'bg-white border border-gray-200 hover:bg-gray-50'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedModels.includes(model.id)}
-                            onChange={() => toggleModel(model.id)}
-                            className="w-4 h-4 text-indigo-600 rounded"
-                          />
-                          <span className="text-sm text-gray-700 truncate">{model.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex gap-3">
+      <div className="glass-card rounded-2xl p-5">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('taskTypeLabel')}</h3>
+        <div className="grid grid-cols-3 gap-3">
+          {(['classification', 'regression', 'clustering'] as const).map(type => (
             <button
-              onClick={() => setStep(0)}
-              className="flex-1 py-3 px-6 rounded-xl border-2 border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-all"
-            >
-              ← 重新上传
-            </button>
-            <button
-              onClick={() => setStep(2)}
-              disabled={!canProceed}
-              className={`flex-1 py-3 px-6 rounded-xl font-medium transition-all ${
-                canProceed
-                  ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-200'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              key={type}
+              onClick={() => {
+                setTaskType(type);
+                setTargetColumn('');
+                setSelectedModels(TASK_MODELS[type].slice(0, type === 'clustering' ? 3 : 5));
+              }}
+              className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                taskType === type
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
               }`}
             >
-              开始挖掘 🚀
+              {type === 'classification' ? t('classification') : type === 'regression' ? t('regression') : t('clustering')}
             </button>
+          ))}
+        </div>
+        {taskType === 'clustering' && (
+          <p className="text-xs text-gray-500 mt-2">{t('clusteringDesc')}</p>
+        )}
+      </div>
+
+      {!isClustering && (
+        <div className="glass-card rounded-2xl p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('targetCol')}</h3>
+          <div className="flex flex-wrap gap-2">
+            {columns.map(col => {
+              const isSelected = targetColumn === col;
+              return (
+                <button
+                  key={col}
+                  onClick={() => setTargetColumn(isSelected ? '' : col)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    isSelected
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
+                  }`}
+                >
+                  {col}
+                </button>
+              );
+            })}
+          </div>
+
+          {targetColumn && taskType === 'classification' && classDistribution.length > 0 && (
+            <div className="mt-4 p-4 bg-gray-50 rounded-xl">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('classDistribution')}</h4>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${classDistribution.length > 2 || (classDistribution[0]?.pct || 0) > 0.8 ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'}`}>
+                  {classDistribution[0]?.pct > 0.8 ? t('classesImbalanced', { ratio: Math.round((classDistribution[0]?.count || 0) / (classDistribution[classDistribution.length - 1]?.count || 1)) }) : t('classesBalanced')}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {classDistribution.map(({ value, count, pct }) => (
+                  <div key={value} className="flex items-center gap-3">
+                    <span className="text-xs text-gray-600 w-20 truncate">{value}</span>
+                    <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${pct * 100}%` }} />
+                    </div>
+                    <span className="text-xs text-gray-500 w-24 text-right">{count} ({(pct * 100).toFixed(1)}%)</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="glass-card rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-700">{t('ignoreColumns')}</h3>
+          <span className="text-xs text-gray-400">{ignoreColumns.length} selected</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {columns.filter(c => c !== targetColumn).map(col => {
+            const isIgnored = ignoreColumns.includes(col);
+            return (
+              <button
+                key={col}
+                onClick={() => handleIgnoreToggle(col)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  isIgnored
+                    ? 'bg-red-100 text-red-600 border border-red-200 line-through opacity-60'
+                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
+                }`}
+              >
+                {col}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="glass-card rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-700">{t('models')}</h3>
+          <div className="flex gap-2">
+            <button onClick={handleDefaultModels} className="text-xs text-indigo-500 hover:text-indigo-600 font-medium">{t('defaultModels')}</button>
+            <span className="text-gray-300">|</span>
+            <button onClick={handleSelectAll} className="text-xs text-indigo-500 hover:text-indigo-600 font-medium">{t('selectAll')}</button>
+            <span className="text-gray-300">|</span>
+            <button onClick={handleClearAll} className="text-xs text-gray-400 hover:text-gray-600">{t('clearAll')}</button>
           </div>
         </div>
+        <div className="flex flex-wrap gap-2">
+          {suggestedModels.map(m => {
+            const isSelected = selectedModels.includes(m);
+            return (
+              <button
+                key={m}
+                onClick={() => handleModelToggle(m)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  isSelected
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
+                }`}
+              >
+                {getModelLabel(m, taskType)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="glass-card rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-700">{t('advancedOptions')}</h3>
+        </div>
+        <div className="space-y-3">
+          {taskType === 'classification' && (
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useSmote}
+                onChange={e => setUseSmote(e.target.checked)}
+                disabled={!canUseSmote}
+                className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-700">{t('smote')}</span>
+                {canUseSmote && (
+                  <span className="text-xs text-gray-400 ml-2">{t('smoteEnabled')}</span>
+                )}
+              </div>
+            </label>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        <button
+          onClick={() => setStep(0)}
+          className="px-6 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors"
+        >
+          {t('back')}
+        </button>
+        <button
+          onClick={handleStartTraining}
+          disabled={selectedModels.length === 0 || (!isClustering && !targetColumn)}
+          className="flex-1 px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        >
+          {t('startTraining')}
+        </button>
       </div>
     </div>
   );

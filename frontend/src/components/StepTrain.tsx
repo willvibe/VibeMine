@@ -1,8 +1,10 @@
 import { useAppStore } from '../store';
+import { useI18n } from '../i18n/index';
 import { startTraining, getTrainStatus, stopTraining } from '../api';
 import { useEffect, useRef, useState, useCallback } from 'react';
 
 export default function StepTrain() {
+  const { t } = useI18n();
   const filename = useAppStore((s) => s.filename);
   const taskType = useAppStore((s) => s.taskType);
   const targetColumn = useAppStore((s) => s.targetColumn);
@@ -13,12 +15,12 @@ export default function StepTrain() {
   const setTrainResult = useAppStore((s) => s.setTrainResult);
   const setStep = useAppStore((s) => s.setStep);
   const setError = useAppStore((s) => s.setError);
+  const setAiEvaluation = useAppStore((s) => s.setAiEvaluation);
+  const setMisclassifiedAnalysis = useAppStore((s) => s.setMisclassifiedAnalysis);
 
   const [progress, setProgress] = useState(0);
-  const [trainingStage, setTrainingStage] = useState('提交训练任务...');
+  const [trainingStage, setTrainingStage] = useState(t('initializing'));
   const [completedModels, setCompletedModels] = useState<string[]>([]);
-  const [currentModel, setCurrentModel] = useState('');
-  const [totalModels, setTotalModels] = useState(selectedModels.length);
   const sessionIdRef = useRef<string>('');
   const pollTimerRef = useRef<number | null>(null);
   const stoppedRef = useRef(false);
@@ -30,15 +32,26 @@ export default function StepTrain() {
 
       if (data.status === 'completed' && data.result) {
         setProgress(100);
-        setTrainingStage('训练完成!');
-        setTrainResult(data.result);
+        setTrainingStage(t('trainingComplete'));
+        const storedSessionId = sessionIdRef.current || data.session_id;
+        setTrainResult(data.result, storedSessionId);
+        setAiEvaluation('');
+        setMisclassifiedAnalysis('');
         setStep(3);
         if (pollTimerRef.current) clearInterval(pollTimerRef.current);
         return;
       }
 
+      if (data.status === 'completed' && !data.result) {
+        setError('训练结果为空，请检查数据格式后重试');
+        setTraining(false);
+        setStep(1);
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        return;
+      }
+
       if (data.status === 'error') {
-        setError(data.error || '训练失败');
+        setError(data.error || '训练失败，请稍后重试');
         setTraining(false);
         setStep(1);
         if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -46,7 +59,7 @@ export default function StepTrain() {
       }
 
       if (data.status === 'stopped') {
-        setError('训练已停止');
+        setError(t('stopTraining'));
         setTraining(false);
         setStep(1);
         if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -54,16 +67,16 @@ export default function StepTrain() {
       }
 
       setProgress(data.progress || 0);
-      setTrainingStage(data.current_model || '训练中...');
-      setCurrentModel(data.current_model || '');
+      setTrainingStage(data.current_model || t('training'));
       if (data.completed_models) setCompletedModels(data.completed_models);
-    } catch {
-      setError('获取训练状态失败');
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '网络错误，请检查连接后重试';
+      setError(errorMsg);
       setTraining(false);
       setStep(1);
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     }
-  }, [setTrainResult, setStep, setTraining, setError]);
+  }, [setTrainResult, setStep, setTraining, setError, t, setAiEvaluation, setMisclassifiedAnalysis]);
 
   useEffect(() => {
     stoppedRef.current = false;
@@ -73,18 +86,22 @@ export default function StepTrain() {
         const data = await startTraining({
           filename,
           task_type: taskType,
-          target_column: targetColumn,
+          target_column: taskType === 'clustering' ? undefined : targetColumn,
           selected_models: selectedModels,
           ignore_columns: ignoreColumns,
           use_smote: useSmote,
+          use_outlier_removal: true,
+          use_advanced_imputation: true,
+          use_stratified_cv: true,
+          use_tuning: true,
+          use_ensembling: true,
         });
         sessionIdRef.current = data.session_id;
-        setTrainingStage('训练已启动...');
-        setTotalModels(selectedModels.length);
-
+        setTrainingStage(t('initEngine'));
         pollTimerRef.current = window.setInterval(pollStatus, 1000);
-      } catch {
-        setError('提交训练任务失败');
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : '启动训练失败，请检查数据后重试';
+        setError(errorMsg);
         setTraining(false);
         setStep(1);
       }
@@ -92,16 +109,7 @@ export default function StepTrain() {
 
     start();
 
-    const handleBeforeUnload = () => {
-      if (sessionIdRef.current) {
-        stopTraining(sessionIdRef.current);
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
       sessionIdRef.current = '';
       stoppedRef.current = true;
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -118,122 +126,112 @@ export default function StepTrain() {
     stoppedRef.current = true;
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     setTraining(false);
-    setError('用户取消了训练');
+    setError(t('stopTraining'));
     setStep(1);
-  }, [setTraining, setError, setStep]);
+  }, [setTraining, setError, setStep, t]);
 
-  const taskTypeLabel = {
-    classification: '分类',
-    regression: '回归',
-    clustering: '聚类',
-  }[taskType] || taskType;
+  const phases = [
+    () => t('preprocessing'),
+    () => t('modelTraining'),
+    () => t('modelEvaluation'),
+    () => t('done'),
+  ];
+  const phaseIndex = (() => {
+    if (progress <= 8) return 0;
+    if (progress < 92) return 1;
+    if (progress < 100) return 2;
+    return 3;
+  })();
+
+  const taskLabel = taskType === 'classification' ? t('classification') : taskType === 'regression' ? t('regression') : t('clustering');
 
   return (
-    <div className="max-w-2xl mx-auto text-center py-16">
-      <div className="relative inline-block mb-8">
-        <div className="w-24 h-24 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-3xl">🧠</span>
+    <div className="max-w-lg mx-auto text-center py-12">
+      <div className="relative mb-10">
+        <div className="w-24 h-24 mx-auto relative">
+          <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="45" fill="none" stroke="#f1f5f9" strokeWidth="6" />
+            <circle
+              cx="50"
+              cy="50"
+              r="45"
+              fill="none"
+              stroke="url(#progress-gradient)"
+              strokeWidth="6"
+              strokeLinecap="round"
+              strokeDasharray={`${progress * 2.83} 283`}
+              className="transition-all duration-700 ease-out"
+            />
+            <defs>
+              <linearGradient id="progress-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#6366f1" />
+                <stop offset="100%" stopColor="#a855f7" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-2xl font-bold text-gray-800">{progress}%</span>
+          </div>
         </div>
       </div>
 
-      <h2 className="text-2xl font-bold text-gray-800 mb-3">AutoML 引擎运行中</h2>
-      <p className="text-gray-500 mb-2">
-        正在使用 PyCaret 横向评估 {selectedModels.length} 种算法
-      </p>
-      <p className="text-indigo-600 font-medium mb-2">{trainingStage}</p>
-      {currentModel && (
-        <p className="text-sm text-purple-600 animate-pulse">
-          正在训练: {currentModel}
-        </p>
-      )}
+      <h2 className="text-2xl font-semibold tracking-tight text-gray-900 mb-1">{t('train')}</h2>
+      <p className="text-sm text-gray-500 mb-8">{trainingStage}</p>
 
-      <div className="w-full max-w-md mx-auto mb-6">
-        <div className="flex justify-between text-sm text-gray-600 mb-1">
-          <span>训练进度</span>
-          <span>{progress}%</span>
-        </div>
-        <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-          <div
-            className="bg-gradient-to-r from-indigo-500 to-purple-600 h-full rounded-full transition-all duration-500 ease-out"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <div className="mt-2 text-xs text-gray-500">
-          已完成模型: {completedModels.length} / {totalModels}
-        </div>
+      <div className="flex gap-1.5 justify-center mb-8">
+        {phases.map((phase, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <div
+              className={`w-2 h-2 rounded-full transition-all duration-500 ${
+                i < phaseIndex ? 'bg-indigo-500' : i === phaseIndex ? 'bg-indigo-400 animate-pulse' : 'bg-gray-200'
+              }`}
+            />
+            <span className={`text-[10px] font-medium ${i <= phaseIndex ? 'text-gray-700' : 'text-gray-400'}`}>
+              {phase()}
+            </span>
+          </div>
+        ))}
       </div>
 
       {completedModels.length > 0 && (
-        <div className="w-full max-w-md mx-auto mb-6">
-          <div className="flex flex-wrap gap-2 justify-center">
-            {completedModels.map((model) => (
-              <span
-                key={model}
-                className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm"
-              >
-                ✓ {model}
-              </span>
-            ))}
-            {currentModel && (
-              <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm animate-pulse">
-                ⚙ {currentModel}
-              </span>
-            )}
-          </div>
+        <div className="flex flex-wrap gap-2 justify-center mb-8">
+          {completedModels.map((model) => (
+            <span
+              key={model}
+              className="px-3 py-1 rounded-full bg-green-50 text-green-600 text-xs font-medium border border-green-100"
+            >
+              ✓ {model}
+            </span>
+          ))}
         </div>
       )}
 
-      <div className="bg-gray-50 rounded-xl p-6 text-left max-w-md mx-auto">
-        <div className="space-y-3 text-sm">
-          <div className="flex justify-between">
-            <span className="text-gray-500">任务类型</span>
-            <span className="font-medium text-gray-700">{taskTypeLabel}</span>
-          </div>
-          {taskType !== 'clustering' && (
-            <div className="flex justify-between">
-              <span className="text-gray-500">目标列</span>
-              <span className="font-medium text-gray-700">{targetColumn}</span>
-            </div>
-          )}
-          <div className="flex justify-between">
-            <span className="text-gray-500">选中算法</span>
-            <span className="font-medium text-gray-700">{selectedModels.length} 个</span>
-          </div>
-          {ignoreColumns.length > 0 && (
-            <div className="flex justify-between">
-              <span className="text-gray-500">忽略列</span>
-              <span className="font-medium text-gray-700">{ignoreColumns.length} 个</span>
-            </div>
-          )}
-          {useSmote && (
-            <div className="flex justify-between">
-              <span className="text-gray-500">SMOTE</span>
-              <span className="font-medium text-green-600">已开启</span>
-            </div>
-          )}
-          <div className="flex justify-between">
-            <span className="text-gray-500">当前阶段</span>
-            <span className="font-medium text-indigo-600">{trainingStage}</span>
-          </div>
+      <div className="glass-card rounded-2xl p-5 text-left">
+        <div className="space-y-3">
+          {[
+            { label: t('taskType'), value: taskLabel },
+            taskType !== 'clustering' && { label: t('targetColumn'), value: targetColumn },
+            { label: t('models'), value: `${selectedModels.length} ${t('modelCount')?.replace(/.*?(\d+).*/,'$1') || ''}` },
+            useSmote && { label: t('smote'), value: t('smoteEnabled') },
+            ignoreColumns.length > 0 && { label: t('ignoreColumns'), value: `${ignoreColumns.length}` },
+          ]
+            .filter(Boolean)
+            .map((item: any, i) => (
+              <div key={i} className="flex justify-between items-center py-1.5">
+                <span className="text-xs text-gray-500">{item.label}</span>
+                <span className={`text-xs font-medium ${item.label === t('smote') ? 'text-green-600' : 'text-gray-700'}`}>
+                  {item.value}
+                </span>
+              </div>
+            ))}
         </div>
-      </div>
-
-      <div className="mt-8 flex gap-2 justify-center">
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce"
-            style={{ animationDelay: `${i * 0.15}s` }}
-          />
-        ))}
       </div>
 
       <button
         onClick={handleStop}
-        className="mt-8 px-6 py-3 bg-red-500 text-white font-medium rounded-xl hover:bg-red-600 transition-colors shadow-md"
+        className="mt-8 px-6 py-2.5 rounded-xl bg-red-50 text-red-500 text-sm font-medium border border-red-100 hover:bg-red-100 transition-all duration-300"
       >
-        停止训练 🛑
+        {t('stopTraining')}
       </button>
     </div>
   );

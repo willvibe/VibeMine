@@ -2,18 +2,20 @@ import json
 from google import genai
 from app.config import GEMINI_API_KEY
 
-GEMINI_CLIENT = None
+_CLIENT_CACHE = {}
 
-def get_client():
-    global GEMINI_CLIENT
-    if GEMINI_CLIENT is None:
-        GEMINI_CLIENT = genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": 30})
-    return GEMINI_CLIENT
+def get_client(api_key: str = None) -> genai.Client:
+    key = api_key or GEMINI_API_KEY
+    if not key:
+        raise ValueError("Gemini API Key 未设置，请在设置中配置")
+    if key not in _CLIENT_CACHE:
+        _CLIENT_CACHE[key] = genai.Client(api_key=key, http_options={"timeout": 30})
+    return _CLIENT_CACHE[key]
 
 
-def get_data_insight(profile: dict) -> str:
+def get_data_insight(profile: dict, api_key: str = None) -> str:
     try:
-        client = get_client()
+        client = get_client(api_key)
 
         col_summaries = []
         for col in profile["columns"]:
@@ -43,9 +45,9 @@ def get_data_insight(profile: dict) -> str:
         return f"**AI 分析暂时不可用**\n\n错误信息：{str(e)[:100]}"
 
 
-def get_model_evaluation(metrics_table: list, target_column: str, task_type: str) -> str:
+def get_model_evaluation(metrics_table: list, target_column: str, task_type: str, api_key: str = None) -> str:
     try:
-        client = get_client()
+        client = get_client(api_key)
 
         metrics_text = json_to_markdown_table(metrics_table[:5])
 
@@ -65,6 +67,46 @@ def get_model_evaluation(metrics_table: list, target_column: str, task_type: str
         return response.text
     except Exception as e:
         return f"**AI 评估暂时不可用**\n\n错误信息：{str(e)[:100]}"
+
+
+def get_misclassified_analysis(misclassified_samples: list, target_column: str, feature_importance: dict, api_key: str = None) -> str:
+    if not misclassified_samples or len(misclassified_samples) == 0:
+        return "**错误样本分析**\n\n本次训练中未出现预测错误的样本，说明模型在验证集上表现良好。"
+    try:
+        client = get_client(api_key)
+        sample_count = len(misclassified_samples)
+        display_samples = misclassified_samples[:20]
+
+        feature_text = ""
+        if feature_importance:
+            top_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:5]
+            feature_text = "Top 5 重要特征：\n" + "\n".join([f"- {k}: {v:.4f}" for k, v in top_features])
+
+        sample_rows = []
+        for s in display_samples:
+            row_str = ", ".join([f"{k}={v}" for k, v in s.items() if k not in ('prediction_label', 'prediction_label_text')])
+            sample_rows.append(f"- [{s.get(target_column, '?')}] 预测为 [{s.get('prediction_label', '?')}]: {row_str}")
+        samples_text = "\n".join(sample_rows)
+
+        prompt = f"""你是一个资深的数据科学家。用户正在进行二分类/多分类任务，模型在验证集上出现了一些预测错误的样本。
+
+错误样本统计：共 {sample_count} 条（显示前 {len(display_samples)} 条）
+
+Top 5 重要特征及权重：
+{feature_text}
+
+错误样本详情：
+{samples_text}
+
+请分析这些错误样本的特点：是否存在某类样本被集中误判？是否存在特征缺失或异常值导致的误判？并给出2-3条具体的优化建议（如：增加样本量、特征工程、调整阈值、换用其他算法等）。语言直白专业，格式使用 Markdown，控制在 300 字以内。"""
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+        )
+        return f"**错误样本分析**\n\n{response.text}"
+    except Exception as e:
+        return f"**错误样本分析暂时不可用**\n\n错误信息：{str(e)[:100]}"
 
 
 def json_to_markdown_table(data: list) -> str:

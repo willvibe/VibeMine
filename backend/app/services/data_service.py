@@ -39,9 +39,14 @@ def get_data_profile(df: pd.DataFrame) -> dict:
             col_info["std"] = round(float(df[col].std()), 4) if not df[col].isnull().all() else None
             col_info["min"] = round(float(df[col].min()), 4) if not df[col].isnull().all() else None
             col_info["max"] = round(float(df[col].max()), 4) if not df[col].isnull().all() else None
+            col_info["p25"] = round(float(df[col].quantile(0.25)), 4) if not df[col].isnull().all() else None
+            col_info["p50"] = round(float(df[col].quantile(0.50)), 4) if not df[col].isnull().all() else None
+            col_info["p75"] = round(float(df[col].quantile(0.75)), 4) if not df[col].isnull().all() else None
         else:
             top_val = df[col].mode().iloc[0] if not df[col].mode().empty else None
             col_info["top_value"] = str(top_val) if top_val is not None else None
+            val_counts = df[col].value_counts()
+            col_info["value_counts"] = {str(k): int(v) for k, v in val_counts.head(10).items()}
 
         is_id = col.lower() in ('id', 'idx', 'no', 'number', 'serial', 'uid', 'key') or col.endswith('_id')
         is_low_variance = col_info["unique_count"] <= 1
@@ -52,14 +57,48 @@ def get_data_profile(df: pd.DataFrame) -> dict:
 
     preview = df.head(5).fillna("NaN").to_dict(orient="records")
 
+    # Calculate class distribution for each potential target column
+    class_distributions = {}
     for col in df.columns:
-        if df[col].dtype == 'object' or df[col].nunique() <= 10:
+        # Check object columns or numeric columns with <= 10 unique values (potential classification targets)
+        if df[col].dtype == 'object' or (pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() <= 10 and df[col].nunique() >= 2):
             value_counts = df[col].value_counts()
             if len(value_counts) >= 2:
                 ratio = value_counts.iloc[0] / value_counts.iloc[-1] if value_counts.iloc[-1] > 0 else 0
-                if ratio > 5:
+                if ratio > 2:
                     imbalance_detected = True
                     imbalance_ratio = max(imbalance_ratio, ratio)
+                    class_distributions[col] = {
+                        str(k): int(v) for k, v in value_counts.items()
+                    }
+
+    describe_data = df.describe(include='all').fillna("N/A").to_dict()
+
+    info_list = []
+    total_rows = len(df)
+    for col in df.columns:
+        non_null = df[col].count()
+        null_count = df[col].isnull().sum()
+        unique_vals = df[col].nunique()
+        dtype_str = str(df[col].dtype)
+        if dtype_str == 'object':
+            sample_val = df[col].dropna().iloc[0] if non_null > 0 else ''
+            info_list.append({
+                "column": col,
+                "dtype": dtype_str,
+                "non_null": int(non_null),
+                "null": int(null_count),
+                "unique": int(unique_vals),
+                "sample": str(sample_val)[:50] if sample_val else '',
+            })
+        else:
+            info_list.append({
+                "column": col,
+                "dtype": dtype_str,
+                "non_null": int(non_null),
+                "null": int(null_count),
+                "unique": int(unique_vals),
+            })
 
     return {
         "shape": shape,
@@ -68,4 +107,8 @@ def get_data_profile(df: pd.DataFrame) -> dict:
         "preview": preview,
         "imbalance_detected": imbalance_detected,
         "imbalance_ratio": round(imbalance_ratio, 2),
+        "class_distributions": class_distributions,
+        "describe": describe_data,
+        "info": info_list,
+        "total_rows": total_rows,
     }
