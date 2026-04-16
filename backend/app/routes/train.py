@@ -7,7 +7,6 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from app.services.train_service import run_automl
-from app.services.ai_service import get_model_evaluation, get_misclassified_analysis
 from app.config import UPLOAD_DIR, MODEL_DIR
 
 router = APIRouter(prefix="/api", tags=["train"])
@@ -223,50 +222,10 @@ async def stop_training(session_id: str):
 
 
 @router.get("/train/ai-evaluation/{session_id}")
-async def get_ai_evaluation(session_id: str, x_api_key: str = Header(None)):
-    with session_lock:
-        session = training_sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="训练会话不存在或已过期")
-    if session.result is None:
-        raise HTTPException(status_code=400, detail="训练结果不存在")
-    if "ai_evaluation" in session.result and session.result["ai_evaluation"]:
-        return {"ai_evaluation": session.result["ai_evaluation"]}
-    try:
-        ai_evaluation = get_model_evaluation(
-            session.result["metrics_table"],
-            session.params.target_column,
-            session.params.task_type,
-            api_key=x_api_key,
-        )
-    except Exception as e:
-        logger.error(f"AI evaluation failed: {e}", exc_info=True)
-        ai_evaluation = "**AI 评估暂时不可用**\n\n请稍后重试或检查 API Key 配置"
-    with session_lock:
-        session.result["ai_evaluation"] = ai_evaluation
-    return {"ai_evaluation": ai_evaluation}
+async def get_ai_evaluation(session_id: str):
+    raise HTTPException(status_code=501, detail="AI evaluation 已移至前端执行，请在评估页点击 AI 按钮")
 
 
 @router.get("/train/ai-misclassified/{session_id}")
-async def get_ai_misclassified(session_id: str, x_api_key: str = Header(None)):
-    with session_lock:
-        session = training_sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="训练会话不存在或已过期")
-    if session.result is None:
-        raise HTTPException(status_code=400, detail="训练结果不存在")
-    if "misclassified_analysis" in session.result and session.result["misclassified_analysis"]:
-        return {"misclassified_analysis": session.result["misclassified_analysis"]}
-    try:
-        misclassified_analysis = get_misclassified_analysis(
-            session.result.get("misclassified_samples", []),
-            session.params.target_column,
-            session.result.get("feature_importance", {}),
-            api_key=x_api_key,
-        )
-    except Exception as e:
-        logger.error(f"AI misclassified analysis failed: {e}", exc_info=True)
-        misclassified_analysis = "**错误样本分析暂时不可用**\n\n请稍后重试或检查 API Key 配置"
-    with session_lock:
-        session.result["misclassified_analysis"] = misclassified_analysis
-    return {"misclassified_analysis": misclassified_analysis}
+async def get_ai_misclassified(session_id: str):
+    raise HTTPException(status_code=501, detail="AI misclassified analysis 已移至前端执行，请在评估页点击 AI 按钮")
