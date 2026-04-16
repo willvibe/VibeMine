@@ -34,8 +34,12 @@ export async function callGemini(prompt: string, apiKey?: string): Promise<strin
     }),
   });
   if (!res.ok) {
-    const errText = await res.text().catch(() => res.statusText);
-    return `**AI 分析失败**\n\nHTTP ${res.status}: ${errText.slice(0, 120)}`;
+    const errData = await res.json().catch(() => null);
+    const errMsg = errData?.error?.message || res.statusText;
+    if (res.status === 429) {
+      return `**AI 分析失败 - 配额已用尽**\n\n您的 Gemini API Key 免费额度已用完。请：\n1. 前往 [Google AI Studio](https://aistudio.google.com/) 升级计费计划\n2. 或在设置中更换其他 API Key\n3. 免费用户每分钟有请求次数限制，请稍后重试`;
+    }
+    return `**AI 分析失败**\n\nHTTP ${res.status}: ${errMsg.slice(0, 150)}`;
   }
   const data = await res.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text || '**AI 返回空结果，请稍后重试**';
