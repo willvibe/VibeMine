@@ -8,17 +8,17 @@ const TASK_MODELS: Record<string, string[]> = {
 };
 
 const MODEL_LABELS: Record<string, string> = {
-  lr: 'Logistic Regression', rf: 'Random Forest', gbc: 'Gradient Boosting', et: 'Extra Trees',
-  xgb: 'XGBoost', lightgbm: 'LightGBM', dt: 'Decision Tree', knn: 'KNN', ada: 'AdaBoost',
-  lda: 'LDA', nb: 'Naive Bayes', qda: 'QDA',
-  lasso: 'Lasso', en: 'ElasticNet', ridge: 'Ridge', gbr: 'Gradient Boosting Regressor',
-  kmeans: 'K-Means', hclust: 'Hierarchical', dbscan: 'DBSCAN', meanshift: 'Mean Shift', affinity: 'Affinity',
+  lr: 'Logistic Regression', rf: 'Random Forest', gbc: 'Gradient Boosting Classifier', et: 'Extra Trees Classifier',
+  xgb: 'XGBoost', lightgbm: 'LightGBM', dt: 'Decision Tree', knn: 'K-Nearest Neighbors', ada: 'AdaBoost',
+  lda: 'Linear Discriminant Analysis', nb: 'Naive Bayes', qda: 'Quadratic Discriminant Analysis',
+  lasso: 'Lasso Regression', en: 'Elastic Net', ridge: 'Ridge Regression', gbr: 'Gradient Boosting Regressor',
+  kmeans: 'K-Means', hclust: 'Hierarchical Clustering', dbscan: 'DBSCAN', meanshift: 'Mean Shift', affinity: 'Affinity Propagation',
 };
 
 const REGRESSION_MODEL_LABELS: Record<string, string> = {
   lr: 'Linear Regression', ridge: 'Ridge Regression', lasso: 'Lasso Regression',
-  en: 'ElasticNet', rf: 'Random Forest', et: 'Extra Trees', gbr: 'Gradient Boosting Regressor',
-  lightgbm: 'LightGBM', knn: 'KNN', dt: 'Decision Tree',
+  en: 'Elastic Net', rf: 'Random Forest Regressor', et: 'Extra Trees Regressor', gbr: 'Gradient Boosting Regressor',
+  lightgbm: 'LightGBM Regressor', knn: 'K-Nearest Neighbors Regressor', dt: 'Decision Tree Regressor',
 };
 
 function getModelLabel(key: string, taskType: string): string {
