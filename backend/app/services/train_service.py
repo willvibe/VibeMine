@@ -17,7 +17,9 @@ from app.config import UPLOAD_DIR, MODEL_DIR
 
 logger = logging.getLogger(__name__)
 
-os.environ.setdefault("OMP_NUM_THREADS", os.cpu_count() and str(min(os.cpu_count(), 14)) or "4")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 MODEL_NAME_MAP = {
     'lr': 'lr', 'ridge': 'ridge', 'lasso': 'lasso', 'rf': 'rf',
@@ -181,7 +183,7 @@ def run_automl(
             'data': df,
             'target': target_column,
             'session_id': np.random.randint(1, 9999),
-            'n_jobs': -1,
+            'n_jobs': 1,
             'verbose': False,
             'ignore_features': ignore_cols if ignore_cols else None,
             'fix_imbalance': fix_imbalance,
@@ -349,7 +351,7 @@ def run_automl(
             'data': df,
             'target': target_column,
             'session_id': np.random.randint(1, 9999),
-            'n_jobs': -1,
+            'n_jobs': 1,
             'verbose': False,
             'ignore_features': ignore_cols if ignore_cols else None,
         }
@@ -471,7 +473,7 @@ def run_automl(
         check_stop()
 
         clu_setup(
-            data=df, session_id=np.random.randint(1, 9999), n_jobs=-1, verbose=False,
+            data=df, session_id=np.random.randint(1, 9999), n_jobs=1, verbose=False,
             ignore_features=ignore_cols if ignore_cols else None,
         )
 
