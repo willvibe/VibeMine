@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAppStore } from '../store';
 import { useI18n } from '../i18n/index';
-import { getAiEvaluation, getAiMisclassified } from '../api';
+import { callGemini } from '../api';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts/core';
 import { BarChart, RadarChart } from 'echarts/charts';
@@ -104,7 +104,6 @@ function parseMarkdown(text: string) {
 export default function StepEvaluate() {
   const { t } = useI18n();
   const trainResult = useAppStore((s) => s.trainResult);
-  const sessionId = useAppStore((s) => s.sessionId);
   const taskType = useAppStore((s) => s.taskType);
   const targetColumn = useAppStore((s) => s.targetColumn);
   const aiEvaluation = useAppStore((s) => s.aiEvaluation);
@@ -438,34 +437,69 @@ export default function StepEvaluate() {
   };
 
   const handleAiEvaluation = async () => {
-    if (!sessionId) {
-      setAiEvaluation(t('sessionNotFound'));
+    if (!trainResult || trainResult.metrics_table.length === 0) {
+      setAiEvaluation(t('aiEvalUnavailable'));
       return;
     }
     setAiLoading(true);
     try {
-      const data = await getAiEvaluation(sessionId);
-      setAiEvaluation(data.ai_evaluation || t('aiEvalUnavailable'));
+      const mt = trainResult.metrics_table;
+      const bestIdx = mt.findIndex((r: any) => {
+        const mk = taskType === 'regression' ? 'R2' : taskType === 'clustering' ? 'Silhouette' : 'Accuracy';
+        const val = parseFloat(r[mk]);
+        return !isNaN(val) && val === Math.max(...mt.map((row: any) => parseFloat(row[mk]) || 0));
+      });
+      const bestModel = bestIdx >= 0 ? String(mt[bestIdx].Model) : '';
+      const table = JSON.stringify(mt, null, 2);
+      const prompt = `你是一个资深的数据科学家。用户完成了机器学习训练，以下是所有模型的指标对比：
+
+任务类型：${taskType}
+目标列：${targetColumn || '无'}
+模型指标数据：
+${table}
+
+最佳模型是：${bestModel}
+
+请分析：
+1. 最佳模型的表现如何
+2. 各模型之间的差异
+3. 有什么优化建议
+请使用 Markdown 格式，控制在 500 字以内。`;
+      const result = await callGemini(prompt);
+      setAiEvaluation(result);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setAiEvaluation(t('aiEvalFailed', { msg }));
+      setAiEvaluation(t('aiEvalFailed', { msg: String(err) }));
     } finally {
       setAiLoading(false);
     }
   };
 
   const handleAiMisclassified = async () => {
-    if (!sessionId) {
-      setMisclassifiedAnalysis(t('sessionNotFound'));
+    if (!trainResult) {
+      setMisclassifiedAnalysis(t('aiMisclassUnavailable'));
       return;
     }
     setAiLoading(true);
     try {
-      const data = await getAiMisclassified(sessionId);
-      setMisclassifiedAnalysis(data.misclassified_analysis || t('aiMisclassUnavailable'));
+      const samples = (trainResult as any).misclassified_samples || [];
+      const featImp = trainResult.feature_importance || {};
+      const topFeatures = Object.entries(featImp).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([n, v]) => `${n} (${v})`);
+      const prompt = `你是一个资深的数据科学家。以下是分类模型中被错误分类的样本（共 ${samples.length} 个）：
+
+目标列：${targetColumn}
+最重要特征：${topFeatures.join(', ')}
+错误样本：
+${JSON.stringify(samples.slice(0, 20), null, 2)}
+
+请分析：
+1. 错误样本的共同特征
+2. 可能的原因
+3. 改进建议
+请使用 Markdown 格式，控制在 400 字以内。`;
+      const result = await callGemini(prompt);
+      setMisclassifiedAnalysis(result);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setMisclassifiedAnalysis(t('aiMisclassFailed', { msg }));
+      setMisclassifiedAnalysis(t('aiMisclassFailed', { msg: String(err) }));
     } finally {
       setAiLoading(false);
     }

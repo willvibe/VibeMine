@@ -1,8 +1,9 @@
 import axios from 'axios';
 
 const API_KEY_KEY = 'vibemine_gemini_key';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
-function getApiKey(): string | null {
+export function getApiKey(): string | null {
   return localStorage.getItem(API_KEY_KEY);
 }
 
@@ -16,6 +17,28 @@ const api = axios.create({
 function authHeaders(): Record<string, string> {
   const key = getApiKey();
   return key ? { 'x-api-key': key } : {};
+}
+
+/** 前端直接调用 Gemini REST API */
+export async function callGemini(prompt: string, apiKey?: string): Promise<string> {
+  const key = apiKey || getApiKey();
+  if (!key) {
+    return '**未设置 API Key**\n\n请在设置中填写 Gemini API Key 后再使用 AI 功能';
+  }
+  const url = `${GEMINI_API_URL}?key=${key}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => res.statusText);
+    return `**AI 分析失败**\n\nHTTP ${res.status}: ${errText.slice(0, 120)}`;
+  }
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '**AI 返回空结果，请稍后重试**';
 }
 
 export async function uploadFile(formData: FormData) {

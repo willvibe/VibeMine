@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAppStore } from '../store';
 import { useI18n } from '../i18n/index';
-import { uploadFile, getUploadAIInsight } from '../api';
+import { uploadFile } from '../api';
 
 type DataTab = 'data' | 'info' | 'stats';
 
@@ -102,11 +102,20 @@ export default function StepUpload() {
   };
 
   const handleAiInsight = async () => {
-    if (!filename) return;
+    if (!filename || dataInfo.length === 0) return;
     setAiLoading(true);
     try {
-      const data = await getUploadAIInsight(filename);
-      setAiInsight(data.ai_insight || '');
+      const colSummaries = dataInfo.map((info: any) =>
+        `- ${info.column} (${info.dtype}): 缺失${info.null}个(${((info.null / (info.non_null + info.null)) * 100).toFixed(1)}%), 唯一值${info.unique}个`
+      ).join('\n');
+      const prompt = `你是一个资深的数据挖掘专家。用户刚上传了一份数据集，基本信息如下：
+数据规模：${totalRows}行 x ${columns.length}列
+各列详情：
+${colSummaries}
+
+请简要分析该数据的潜在问题（如缺失值处理建议、数据分布），并根据特征判断这更适合做分类还是回归任务，推荐2种最合适的初阶算法。语言要专业且带有引导性，格式使用 Markdown，字数控制在 300 字以内。`;
+      const result = await (await import('../api')).callGemini(prompt);
+      setAiInsight(result);
     } catch (err) {
       console.error('AI insight error:', err);
     } finally {
