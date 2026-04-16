@@ -1,15 +1,26 @@
 import json
+import httpx
 from google import genai
 from app.config import GEMINI_API_KEY
 
 _CLIENT_CACHE = {}
+
+
+def _get_proxy() -> str | None:
+    import os
+    return os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+
 
 def get_client(api_key: str = None) -> genai.Client:
     key = api_key or GEMINI_API_KEY
     if not key:
         raise ValueError("Gemini API Key 未设置，请在设置中配置")
     if key not in _CLIENT_CACHE:
-        _CLIENT_CACHE[key] = genai.Client(api_key=key, http_options={"timeout": 30})
+        http_opts = {"timeout": 60}
+        proxy = _get_proxy()
+        if proxy:
+            http_opts["proxy"] = proxy
+        _CLIENT_CACHE[key] = genai.Client(api_key=key, http_options=http_opts)
     return _CLIENT_CACHE[key]
 
 

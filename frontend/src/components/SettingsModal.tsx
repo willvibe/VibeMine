@@ -8,15 +8,19 @@ interface SettingsModalProps {
 export default function SettingsModal({ onClose }: SettingsModalProps) {
   const { t, lang, setLang } = useI18n();
   const [apiKey, setApiKey] = useState('');
+  const [proxy, setProxy] = useState('');
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem(API_KEY_KEY);
     if (stored) setApiKey(stored);
+    const storedProxy = localStorage.getItem('GEMINI_PROXY');
+    if (storedProxy) setProxy(storedProxy);
   }, []);
 
   const handleSave = () => {
     localStorage.setItem(API_KEY_KEY, apiKey.trim());
+    localStorage.setItem('GEMINI_PROXY', proxy.trim());
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -61,6 +65,18 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               )}
             </div>
             <p className="text-xs text-gray-400 mt-1.5">{t('apiKeyTip')}</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Gemini 代理地址</label>
+            <input
+              type="text"
+              value={proxy}
+              onChange={e => setProxy(e.target.value)}
+              placeholder="例如: http://127.0.0.1:7890"
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 transition-all"
+            />
+            <p className="text-xs text-gray-400 mt-1.5">国内服务器需配置代理才能访问 Gemini API</p>
           </div>
 
         </div>

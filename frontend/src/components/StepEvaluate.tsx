@@ -7,7 +7,6 @@ import * as echarts from 'echarts/core';
 import { BarChart, RadarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
-import StepReport from './StepReport';
 
 echarts.use([BarChart, RadarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
@@ -782,8 +781,6 @@ export default function StepEvaluate() {
               ))}
             </div>
           </div>
-
-          <StepReport />
 
           <button
             onClick={() => setStep(4)}

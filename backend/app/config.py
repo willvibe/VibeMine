@@ -11,6 +11,12 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# 代理配置（国内服务器需配置代理才能访问 Gemini API）
+GEMINI_PROXY = os.getenv("GEMINI_PROXY", "")
+if GEMINI_PROXY:
+    os.environ["HTTPS_PROXY"] = GEMINI_PROXY
+    os.environ["https_proxy"] = GEMINI_PROXY
+
 CORS_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:3000",
