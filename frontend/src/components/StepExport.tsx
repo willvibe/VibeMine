@@ -21,6 +21,8 @@ export default function StepExport() {
   const aiEvaluation = useAppStore((s) => s.aiEvaluation);
   const misclassifiedAnalysis = useAppStore((s) => s.misclassifiedAnalysis);
 
+  const [showReport, setShowReport] = useState(false);
+
   if (!trainResult) return null;
 
   const MODEL_NAMES_MAP: Record<string, string> = {
@@ -58,8 +60,8 @@ export default function StepExport() {
   const generateReport = (): string => {
     const metrics = trainResult.metrics_table || [];
     const featImportance = trainResult.feature_importance || {};
-    const modelScores = (trainResult as any).model_scores || {};
-    const completedModels = (trainResult as any).completed_models || [];
+    const modelScores = trainResult.model_scores || {};
+    const completedModels = trainResult.completed_models || [];
 
     let report = `# VibeMine 训练报告\n\n`;
     report += `**生成时间**: ${new Date().toLocaleString('zh-CN')}\n`;
@@ -120,9 +122,15 @@ export default function StepExport() {
     report += `### 4.1 训练概览\n\n`;
     report += `| 指标 | 值 |\n|------|----|\n`;
     report += `| 完成模型数 | ${completedModels.length} |\n`;
-    const bestScore = (trainResult as any).best_score;
-    report += `| 最佳模型得分 | ${bestScore !== null && bestScore !== undefined ? bestScore.toFixed(4) : '-'} |\n`;
-    report += `| 最佳模型 | ${completedModels.length > 0 ? completedModels[0] : '-'} |\n\n`;
+    const bestScore = trainResult.best_score;
+    const reportModelScores = trainResult.model_scores || {};
+    let bestModelName = '-';
+    if (Object.keys(reportModelScores).length > 0) {
+      const bestEntry = Object.entries(reportModelScores).sort((a: any, b: any) => (b[1] as number) - (a[1] as number))[0];
+      bestModelName = bestEntry ? String(bestEntry[0]) : '-';
+    }
+    report += `| 最佳模型得分 | ${bestScore !== null && bestScore !== undefined ? Number(bestScore).toFixed(4) : '-'} |\n`;
+    report += `| 最佳模型 | ${bestModelName} |\n\n`;
 
     if (metrics.length > 0) {
       report += `### 4.2 模型指标对比\n\n`;
@@ -158,8 +166,6 @@ export default function StepExport() {
     return report;
   };
 
-  const [showReport, setShowReport] = useState(false);
-
   const handleDownload = async () => {
     try {
       const blob = await downloadModel(trainResult.model_id);
@@ -190,19 +196,12 @@ export default function StepExport() {
   };
 
   const bestModel = (() => {
-    if (!trainResult || trainResult.metrics_table.length === 0) return 'Unknown';
-    const table = trainResult.metrics_table as Record<string, unknown>[];
-    const metricKey = taskType === 'regression' ? 'R2' : taskType === 'clustering' ? 'Silhouette' : 'Accuracy';
-    let bestIdx = 0;
-    let bestVal = -Infinity;
-    table.forEach((row, i) => {
-      const val = parseFloat(String(row[metricKey] ?? '-Infinity'));
-      if (!isNaN(val) && val > bestVal) {
-        bestVal = val;
-        bestIdx = i;
-      }
-    });
-    return String(table[bestIdx]?.Model || 'Unknown');
+    if (!trainResult || !trainResult.model_scores) return 'Unknown';
+    const scores = trainResult.model_scores;
+    const entries = Object.entries(scores);
+    if (entries.length === 0) return 'Unknown';
+    const sorted = entries.sort((a, b) => b[1] - a[1]);
+    return sorted[0][0];
   })();
 
   const pycaretModule = taskType === 'classification' ? 'classification' : taskType === 'regression' ? 'regression' : 'clustering';
@@ -251,7 +250,7 @@ export default function StepExport() {
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
           </svg>
-          导出模型
+          {t('exportModelBtn')}
         </button>
         <button
           onClick={() => setShowReport(!showReport)}
@@ -260,7 +259,7 @@ export default function StepExport() {
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          {showReport ? '收起报告' : '查看报告'}
+          {showReport ? t('hideReport') : t('viewReport')}
         </button>
         <button
           onClick={handleDownloadReport}
@@ -269,7 +268,7 @@ export default function StepExport() {
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          下载报告
+          {t('downloadReport')}
         </button>
       </div>
 
@@ -287,14 +286,14 @@ export default function StepExport() {
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          重新开始
+          {t('restart')}
         </button>
       </div>
 
       <div className="glass-card rounded-2xl p-5 mt-6 text-left">
-        <p className="text-xs font-medium text-gray-500 mb-2">Python 部署代码</p>
+        <p className="text-xs font-medium text-gray-500 mb-2">{t('pythonDeployCode')}</p>
         <p className="text-xs text-gray-600 leading-relaxed mb-3">
-          下载模型后可使用以下代码加载：
+          {t('pythonDeployDesc')}
         </p>
         <pre className="text-[11px] bg-gray-50 rounded-lg p-3 text-gray-700 leading-relaxed overflow-x-auto">
 {`from pycaret.${pycaretModule} import load_model, predict_model

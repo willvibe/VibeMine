@@ -21,6 +21,9 @@ export interface TrainResult {
   feature_importance: Record<string, number>;
   shap_plot?: string;
   misclassified_samples?: Record<string, unknown>[];
+  completed_models?: string[];
+  model_scores?: Record<string, number>;
+  best_score?: number | null;
 }
 
 export interface DataInfo {

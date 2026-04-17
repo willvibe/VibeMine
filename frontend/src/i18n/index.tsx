@@ -162,6 +162,13 @@ const translations = {
     columnType: '类型',
     columnMissing: '缺失',
     columnUnique: '唯一值',
+    exportModelBtn: '导出模型',
+    viewReport: '查看报告',
+    hideReport: '收起报告',
+    downloadReport: '下载报告',
+    restart: '重新开始',
+    pythonDeployCode: 'Python 部署代码',
+    pythonDeployDesc: '下载模型后可使用以下代码加载：',
   },
   en: {
     brand: 'VibeMine',
@@ -323,6 +330,13 @@ const translations = {
     columnType: 'Type',
     columnMissing: 'Missing',
     columnUnique: 'Unique',
+    exportModelBtn: 'Export Model',
+    viewReport: 'View Report',
+    hideReport: 'Hide Report',
+    downloadReport: 'Download Report',
+    restart: 'Restart',
+    pythonDeployCode: 'Python Deploy Code',
+    pythonDeployDesc: 'After downloading the model, use the following code to load it:',
   },
 };
 

@@ -86,7 +86,7 @@ export default function StepTrain() {
         const data = await startTraining({
           filename,
           task_type: taskType,
-          target_column: taskType === 'clustering' ? undefined : targetColumn,
+          target_column: taskType === 'clustering' ? '' : targetColumn,
           selected_models: selectedModels,
           ignore_columns: ignoreColumns,
           use_smote: useSmote,

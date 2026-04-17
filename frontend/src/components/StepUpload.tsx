@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAppStore } from '../store';
 import { useI18n } from '../i18n/index';
-import { uploadFile } from '../api';
+import { uploadFile, callGemini } from '../api';
 
 type DataTab = 'data' | 'info' | 'stats';
 
@@ -114,7 +114,7 @@ export default function StepUpload() {
 ${colSummaries}
 
 请简要分析该数据的潜在问题（如缺失值处理建议、数据分布），并根据特征判断这更适合做分类还是回归任务，推荐2种最合适的初阶算法。语言要专业且带有引导性，格式使用 Markdown，字数控制在 300 字以内。`;
-      const result = await (await import('../api')).callGemini(prompt);
+      const result = await callGemini(prompt);
       setAiInsight(result);
     } catch (err) {
       console.error('AI insight error:', err);
@@ -261,7 +261,7 @@ ${colSummaries}
                       <tr key={col} className="hover:bg-gray-50/50">
                         <td className="px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{col}</td>
                         {describeKeys.map(k => (
-                          <td key={k} className="px-3 py-2 text-gray-500 whitespace-nowrap text-xs font-mono">{fmt(stats?.[k])}</td>
+                          <td key={k} className="px-3 py-2 text-gray-500 whitespace-nowrap text-xs font-mono">{fmt((stats as any)?.[k])}</td>
                         ))}
                       </tr>
                     ))}

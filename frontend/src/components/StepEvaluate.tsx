@@ -41,8 +41,11 @@ const RADAR_COLORS = ['#4f46e5', '#7c3aed', '#06b6d4', '#10b981', '#f59e0b', '#e
 
 function getFullModelName(name: string): string {
   const upper = name.toUpperCase();
-  const found = Object.keys(MODEL_FULL_NAMES).find(k => upper.includes(k.toUpperCase()) || MODEL_FULL_NAMES[k].toUpperCase().includes(upper));
+  const keys = Object.keys(MODEL_FULL_NAMES).sort((a, b) => b.length - a.length);
+  const found = keys.find(k => upper === k.toUpperCase() || upper.includes(k.toUpperCase()));
   if (found) return MODEL_FULL_NAMES[found];
+  const valueFound = keys.find(k => MODEL_FULL_NAMES[k].toUpperCase() === upper);
+  if (valueFound) return MODEL_FULL_NAMES[valueFound];
   return MODEL_FULL_NAMES[name] || name;
 }
 
@@ -346,7 +349,7 @@ export default function StepEvaluate() {
     series: [{
       type: 'bar' as const,
       data: [...featVals].reverse(),
-      itemStyle: { color: (params: any) => featColors[params.dataIndex], borderRadius: [0, 4, 4, 0] },
+      itemStyle: { color: (params: any) => featColors[featColors.length - 1 - params.dataIndex], borderRadius: [0, 4, 4, 0] },
       barMaxWidth: 12,
       animationDuration: 1200,
       animationEasing: 'cubicOut' as const,

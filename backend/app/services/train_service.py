@@ -38,8 +38,6 @@ PYCARET_METRIC_MAP = {
     'Recall': 'Recall',
     'F1': 'F1',
     'AUC': 'AUC',
-    'AUC_OVR': 'AUC_OVR',
-    'AUC_OVO': 'AUC_OVO',
     'Kappa': 'Kappa',
     'MCC': 'MCC',
     'R2': 'R2',

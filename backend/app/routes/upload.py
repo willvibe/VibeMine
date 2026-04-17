@@ -1,9 +1,8 @@
 import os
 import re
 import logging
-from fastapi import APIRouter, UploadFile, File, HTTPException, Header
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.services.data_service import save_upload_file, parse_csv, get_data_profile
-from app.services.ai_service import get_data_insight
 from app.config import UPLOAD_DIR
 
 router = APIRouter(prefix="/api", tags=["upload"])
@@ -83,27 +82,8 @@ async def upload_file(file: UploadFile = File(...)):
 
 
 @router.get("/upload/ai-insight/{filename}")
-async def get_upload_ai_insight(filename: str, x_api_key: str = Header(None)):
-    if not _is_safe_filename(filename):
-        raise HTTPException(status_code=400, detail="无效的文件名")
-
-    filepath = os.path.realpath(os.path.join(UPLOAD_DIR, filename))
-    upload_dir_real = os.path.realpath(UPLOAD_DIR)
-    if not filepath.startswith(upload_dir_real):
-        raise HTTPException(status_code=403, detail="访问被拒绝")
-
-    if not os.path.exists(filepath):
-        raise HTTPException(status_code=404, detail="文件不存在，请重新上传")
-    try:
-        df = parse_csv(filename)
-        profile = get_data_profile(df)
-        insight = get_data_insight(profile, api_key=x_api_key)
-        return {"ai_insight": insight}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"AI insight error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="AI 分析失败，请稍后重试")
+async def get_upload_ai_insight(filename: str):
+    raise HTTPException(status_code=501, detail="AI insight 已移至前端执行，请在上传页点击 AI 按钮")
 
 
 def _is_safe_filename(filename: str) -> bool:

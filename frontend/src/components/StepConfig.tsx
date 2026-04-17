@@ -48,14 +48,6 @@ export default function StepConfig() {
           .map(([value, count]) => ({ value, count, pct: total > 0 ? count / total : 0 }))
           .sort((a, b) => b.count - a.count);
         setClassDistribution(dist);
-
-        // Auto-enable SMOTE if imbalanced (ratio > 2:1) - classification only
-        if (taskType === 'classification' && dist.length >= 2 && total > 0) {
-          const ratio = dist[0].count / (dist[dist.length - 1].count || 1);
-          if (ratio > 2) {
-            setUseSmote(true);
-          }
-        }
       }
     } else {
       setClassDistribution([]);

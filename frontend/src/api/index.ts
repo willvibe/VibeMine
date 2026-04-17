@@ -81,16 +81,6 @@ export async function stopTraining(sessionId: string) {
   return res.data;
 }
 
-export async function getAiEvaluation(sessionId: string) {
-  const res = await api.get(`/train/ai-evaluation/${sessionId}`, { headers: authHeaders() });
-  return res.data;
-}
-
-export async function getAiMisclassified(sessionId: string) {
-  const res = await api.get(`/train/ai-misclassified/${sessionId}`, { headers: authHeaders() });
-  return res.data;
-}
-
 export async function downloadModel(modelId: string) {
   const downloadUrl = `${BASE_URL}/download/${modelId}`;
   const headers = authHeaders();
@@ -99,9 +89,4 @@ export async function downloadModel(modelId: string) {
     responseType: 'blob',
   });
   return response.data;
-}
-
-export async function getUploadAIInsight(filename: string) {
-  const res = await api.get(`/upload/ai-insight/${filename}`, { headers: authHeaders() });
-  return res.data;
 }
