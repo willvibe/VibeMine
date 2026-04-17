@@ -10,12 +10,21 @@ import { CanvasRenderer } from 'echarts/renderers';
 
 echarts.use([BarChart, RadarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
-const MODEL_FULL_NAMES: Record<string, string> = {
+const CLASSIFICATION_MODEL_NAMES: Record<string, string> = {
   'lr': 'Logistic Regression', 'rf': 'Random Forest', 'gbc': 'Gradient Boosting Classifier',
   'et': 'Extra Trees Classifier', 'xgb': 'XGBoost', 'lightgbm': 'LightGBM', 'dt': 'Decision Tree',
   'knn': 'K-Nearest Neighbors', 'ada': 'AdaBoost', 'lda': 'Linear Discriminant Analysis',
   'qda': 'Quadratic Discriminant Analysis', 'nb': 'Naive Bayes', 'svm': 'SVM',
-  'ridge': 'Ridge Regression', 'lasso': 'Lasso Regression', 'gbr': 'Gradient Boosting Regressor',
+};
+
+const REGRESSION_MODEL_NAMES: Record<string, string> = {
+  'lr': 'Linear Regression', 'ridge': 'Ridge Regression', 'lasso': 'Lasso Regression',
+  'en': 'Elastic Net', 'rf': 'Random Forest Regressor', 'et': 'Extra Trees Regressor',
+  'gbr': 'Gradient Boosting Regressor', 'lightgbm': 'LightGBM Regressor',
+  'knn': 'K-Nearest Neighbors Regressor', 'dt': 'Decision Tree Regressor',
+};
+
+const CLUSTERING_MODEL_NAMES: Record<string, string> = {
   'kmeans': 'K-Means', 'hclust': 'Hierarchical Clustering', 'meanshift': 'Mean Shift',
   'dbscan': 'DBSCAN', 'affinity': 'Affinity Propagation',
 };
@@ -39,14 +48,22 @@ const GRADIENT_COLORS = [
 
 const RADAR_COLORS = ['#4f46e5', '#7c3aed', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-function getFullModelName(name: string): string {
+function getFullModelName(name: string, taskType?: string): string {
   const upper = name.toUpperCase();
-  const keys = Object.keys(MODEL_FULL_NAMES).sort((a, b) => b.length - a.length);
+  const modelNames = taskType === 'regression'
+    ? REGRESSION_MODEL_NAMES
+    : taskType === 'clustering'
+      ? CLUSTERING_MODEL_NAMES
+      : CLASSIFICATION_MODEL_NAMES;
+
+  const keys = Object.keys(modelNames).sort((a, b) => b.length - a.length);
   const found = keys.find(k => upper === k.toUpperCase() || upper.includes(k.toUpperCase()));
-  if (found) return MODEL_FULL_NAMES[found];
-  const valueFound = keys.find(k => MODEL_FULL_NAMES[k].toUpperCase() === upper);
-  if (valueFound) return MODEL_FULL_NAMES[valueFound];
-  return MODEL_FULL_NAMES[name] || name;
+  if (found) return modelNames[found];
+
+  const valueFound = keys.find(k => modelNames[k].toUpperCase() === upper);
+  if (valueFound) return modelNames[valueFound];
+
+  return modelNames[name] || name;
 }
 
 function fmt(v: unknown): string {
@@ -276,7 +293,7 @@ export default function StepEvaluate() {
       textStyle: { color: '#1d1d1f', fontSize: 12, fontFamily: 'ui-sans-serif, system-ui' },
       formatter: (params: any[]) => {
         const idx = params[0]?.dataIndex ?? 0;
-        const modelName = getFullModelName(String(metrics_table[idx]?.Model || ''));
+        const modelName = getFullModelName(String(metrics_table[idx]?.Model || ''), taskType);
         const lines = params.map((p: any) => {
           const color = p.color?.colorStops ? p.color.colorStops[0].color : p.color;
           return `<div style="color:${color};font-size:12px">${p.seriesName}: <b>${fmt(p.value)}</b></div>`;
@@ -299,7 +316,7 @@ export default function StepEvaluate() {
     grid: { top: 12, right: needsDualAxis ? 70 : 24, bottom: 52, left: 48, containLabel: true },
     xAxis: {
       type: 'category' as const,
-      data: metrics_table.map((r, i) => i === bestIdx ? `🏆 ${getFullModelName(String(r.Model || ''))}` : getFullModelName(String(r.Model || ''))),
+      data: metrics_table.map((r, i) => i === bestIdx ? `🏆 ${getFullModelName(String(r.Model || ''), taskType)}` : getFullModelName(String(r.Model || ''), taskType)),
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
@@ -732,7 +749,7 @@ ${JSON.stringify(samples.slice(0, 20), null, 2)}
                     <tr key={i} className={`border-t border-gray-50 transition-colors ${i === bestIdx ? 'bg-indigo-50/50' : ''}`}>
                       {tableColumns.map(key => (
                         <td key={key} className={`px-3 py-2 whitespace-nowrap ${key === 'Model' ? 'font-semibold text-gray-800' : 'text-gray-600'}`}>
-                          {key === 'Model' ? getFullModelName(String(row[key] ?? '')) : fmt(row[key])}
+                          {key === 'Model' ? getFullModelName(String(row[key] ?? ''), taskType) : fmt(row[key])}
                         </td>
                       ))}
                     </tr>
@@ -806,7 +823,7 @@ ${JSON.stringify(samples.slice(0, 20), null, 2)}
                 { label: t('taskType'), value: taskLabel },
                 taskType !== 'clustering' && { label: t('targetColumn'), value: targetColumn },
                 { label: t('modelCount'), value: t('countUnit', { count: metrics_table.length }) },
-                { label: t('bestModel'), value: getFullModelName(bestModelName), highlight: true },
+                { label: t('bestModel'), value: getFullModelName(bestModelName, taskType), highlight: true },
                 { label: t('comparisonMetrics'), value: primaryMetrics.map(m => t(METRIC_LABELS[m] as any) || METRIC_LABELS[m] || m).join(', ') },
                   misclassified_samples && misclassified_samples.length > 0 && { label: t('misclassified'), value: t('countItems', { count: misclassified_samples.length }) },
               ].filter(Boolean).map((item: any) => (
