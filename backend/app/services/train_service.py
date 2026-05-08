@@ -300,6 +300,7 @@ def run_automl(
 
                 tuned_model = base_model
                 tuned_acc = acc
+                tuned_params = {}
                 if use_tuning:
                     report_progress(base_progress + 1, f"[{i+1}/{total_models}] 网格搜索调优: {model_display_name}")
                     check_stop()
@@ -308,10 +309,16 @@ def run_automl(
                     except Exception as e:
                         logger.warning(f"Optuna tuning failed for {model_name}, falling back to scikit-learn: {str(e)}")
                         tuned_model = cls_tune(base_model, optimize='Accuracy', search_library='scikit-learn', n_iter=5, early_stopping=True, verbose=False)
+                    tuned_params = tuned_model.get_params() if hasattr(tuned_model, 'get_params') else {}
                     tuned_folds = cls_pull()
                     tuned_mean = _extract_mean_row(tuned_folds, f"{model_display_name}_Tuned")
                     metrics_list.append(tuned_mean)
-                    fold_details_list.append({'stage': 'Tuned', 'model': model_display_name, 'folds': tuned_folds.to_dict('records')})
+                    fold_details_list.append({
+                        'stage': 'Tuned',
+                        'model': model_display_name,
+                        'folds': tuned_folds.to_dict('records'),
+                        'hyperparameters': tuned_params
+                    })
                     completed_models.append(f"{model_display_name}_Tuned")
                     tuned_acc = float(tuned_mean['Accuracy'].iloc[0]) if 'Accuracy' in tuned_mean.columns else 0
                     model_scores[f"{model_display_name}_Tuned"] = tuned_acc
@@ -490,6 +497,7 @@ def run_automl(
 
                 tuned_model = base_model
                 tuned_r2 = r2
+                tuned_params = {}
                 if use_tuning:
                     report_progress(base_progress + 1, f"[{i+1}/{total_models}] 网格搜索调优: {model_display_name}")
                     check_stop()
@@ -498,10 +506,16 @@ def run_automl(
                     except Exception as e:
                         logger.warning(f"Optuna tuning failed for {model_name}, falling back to scikit-learn: {str(e)}")
                         tuned_model = reg_tune(base_model, optimize='R2', search_library='scikit-learn', n_iter=5, early_stopping=True, verbose=False)
+                    tuned_params = tuned_model.get_params() if hasattr(tuned_model, 'get_params') else {}
                     tuned_folds = reg_pull()
                     tuned_mean = _extract_mean_row(tuned_folds, f"{model_display_name}_Tuned")
                     metrics_list.append(tuned_mean)
-                    fold_details_list.append({'stage': 'Tuned', 'model': model_display_name, 'folds': tuned_folds.to_dict('records')})
+                    fold_details_list.append({
+                        'stage': 'Tuned',
+                        'model': model_display_name,
+                        'folds': tuned_folds.to_dict('records'),
+                        'hyperparameters': tuned_params
+                    })
                     completed_models.append(f"{model_display_name}_Tuned")
                     tuned_r2 = float(tuned_mean['R2'].iloc[0]) if 'R2' in tuned_mean.columns else -float('inf')
                     model_scores[f"{model_display_name}_Tuned"] = tuned_r2

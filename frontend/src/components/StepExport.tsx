@@ -20,6 +20,8 @@ export default function StepExport() {
   const aiInsight = useAppStore((s) => s.aiInsight);
   const aiEvaluation = useAppStore((s) => s.aiEvaluation);
   const misclassifiedAnalysis = useAppStore((s) => s.misclassifiedAnalysis);
+  const useTuning = useAppStore((s) => s.useTuning);
+  const useEnsembling = useAppStore((s) => s.useEnsembling);
 
   const [showReport, setShowReport] = useState(false);
 
@@ -220,6 +222,20 @@ export default function StepExport() {
             return '-';
           });
         report += `| **Mean** | ${avgRow.join(' | ')} |\n\n`;
+
+        if (detail.stage === 'Tuned' && detail.hyperparameters && Object.keys(detail.hyperparameters).length > 0) {
+          report += `**超参数调优结果**:\n`;
+          report += `| 参数 | 值 |\n|------|-----|\n`;
+          const importantParams = ['C', 'max_depth', 'n_estimators', 'learning_rate', 'min_samples_split', 'min_samples_leaf', 'subsample', 'colsample_bytree', 'reg_alpha', 'reg_lambda', 'penalty', 'solver', 'kernel', 'n_neighbors'];
+          const params = detail.hyperparameters;
+          const displayedParams = Object.entries(params).filter(([k]) => importantParams.includes(k)).slice(0, 10);
+          displayedParams.forEach(([key, value]) => {
+            if (value !== null && value !== undefined && value !== '') {
+              report += `| ${key} | ${String(value)} |\n`;
+            }
+          });
+          report += `\n`;
+        }
       });
     }
 
@@ -269,14 +285,17 @@ export default function StepExport() {
   const handleDownloadReport = () => {
     const report = generateReport();
     const blob = new Blob([report], { type: 'text/markdown;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `vibemine_report_${trainResult.model_id}.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `vibemine_report_${trainResult.model_id}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+    reader.readAsDataURL(blob);
   };
 
   const bestModel = (() => {
