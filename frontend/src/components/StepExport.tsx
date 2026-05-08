@@ -92,16 +92,50 @@ export default function StepExport() {
     report += `\n`;
 
     report += `### 2.3 高级选项\n\n`;
-    report += `| 选项 | 状态 |\n|------|------|\n`;
-    report += `| 异常值处理 | ✅ 启用 |\n`;
-    report += `| 缺失值填充 | ✅ 启用 |\n`;
-    report += `| 分层交叉验证 | ✅ 启用 |\n`;
-    report += `| 模型调优 | ✅ 启用 |\n`;
-    report += `| 模型集成 | ✅ 启用 |\n`;
-    report += `| SMOTE | ${useSmote ? '✅ 启用' : '❌ 未启用'} |\n\n`;
+    const preproc = (trainResult as any).preprocessing_details || {};
+    report += `| 选项 | 状态 | 详情 |\n|------|------|------|\n`;
+    report += `| 异常值处理 | ${preproc.outlier_removal?.enabled ? '✅ 启用' : '❌ 未启用'} | ${preproc.outlier_removal?.method || '-'} |\n`;
+    report += `| 缺失值填充 | ${preproc.imputation?.enabled ? '✅ 启用' : '❌ 未启用'} | 数值:${preproc.imputation?.numeric_method || '-'} / 分类型:${preproc.imputation?.categorical_method || '-'} |\n`;
+    report += `| 分层交叉验证 | ✅ 启用 | ${preproc.cross_validation?.strategy || 'Stratified 3-Fold CV'} |\n`;
+    report += `| 模型调优 | ${useTuning ? '✅ 启用' : '❌ 未启用'} | 网格搜索 (Optuna/Scikit-learn) |\n`;
+    report += `| 模型集成 | ${useEnsembling ? '✅ 启用' : '❌ 未启用'} | Bagging / Boosting |\n`;
+    report += `| SMOTE | ${preproc.smote?.enabled ? '✅ 启用' : '❌ 未启用'} | ${preproc.smote?.method || '-'} |\n`;
+    report += `| 特征工程 | ❌ 未启用 | ${preproc.feature_engineering?.note || 'PyCaret 自动特征选择和编码'} |\n\n`;
 
-    report += `---\n\n## 三、数据预处理结果\n\n`;
-    report += `### 3.1 列信息\n\n`;
+    report += `---\n\n## 三、数据预处理详情\n\n`;
+    const origRows = (trainResult as any).original_row_count || 0;
+    report += `### 3.1 数据清洗流程\n\n`;
+    report += `| 步骤 | 操作 | 详情 |\n|------|------|------|\n`;
+    report += `| 原始数据 | ${origRows} 行 | 上传数据 |\n`;
+    if (preproc.outlier_removal?.enabled) {
+      const rowsAfterOutlier = preproc.outlier_removal?.rows_after || origRows;
+      const removed = origRows - rowsAfterOutlier;
+      report += `| 异常值处理 | Isolation Forest 移除 | 移除 ${removed} 行 (阈值=${preproc.outlier_removal?.threshold}) |\n`;
+    }
+    if (preproc.imputation?.enabled) {
+      report += `| 缺失值填充 | KNN/Mode | 对所有缺失值列进行填充 |\n`;
+    }
+    report += `| 特征编码 | PyCaret 自动 | 类别特征自动 One-Hot 编码 |\n`;
+    report += `| 特征选择 | PyCaret 自动 | 移除低方差特征 |\n\n`;
+
+    report += `### 3.2 缺失值填充详情\n\n`;
+    if (preproc.imputation?.enabled) {
+      report += `- **数值列**: ${preproc.imputation.numeric_method}\n`;
+      report += `- **分类型列**: ${preproc.imputation.categorical_method}\n`;
+      report += `- **处理列数**: ${preproc.imputation.columns_before || '-'} 列\n\n`;
+    } else {
+      report += `- **数值列**: Simple Imputation (Mean)\n`;
+      report += `- **分类型列**: Simple Imputation (Mode)\n\n`;
+    }
+
+    report += `### 3.3 交叉验证配置\n\n`;
+    report += `- **策略**: ${preproc.cross_validation?.strategy || 'Stratified 3-Fold CV'}\n`;
+    report += `- **Fold 数**: ${preproc.cross_validation?.folds || 3}\n`;
+    report += `- **分层采样**: ${preproc.cross_validation?.stratified ? '是' : '否'}\n`;
+    report += `- **随机洗牌**: 是\n`;
+    report += `- **随机种子**: PyCaret 自动\n\n`;
+
+    report += `### 3.4 列信息\n\n`;
     report += `| 列名 | 类型 | 非空值 | 缺失值 | 缺失率 | 唯一值 |\n`;
     report += `|------|------|--------|--------|--------|--------|\n`;
     dataInfo.forEach((info: any) => {
@@ -109,7 +143,7 @@ export default function StepExport() {
     });
     report += `\n`;
 
-    report += `### 3.2 数据统计\n\n`;
+    report += `### 3.5 数据统计\n\n`;
     report += `| 统计项 | ${Object.keys(dataDescribe).slice(0, 5).join(' | ')} |\n`;
     report += `|--------|${Object.keys(dataDescribe).slice(0, 5).map(() => '--------|').join('')}\n`;
     ['count', 'mean', 'std', 'min', 'max'].forEach(key => {
@@ -144,14 +178,64 @@ export default function StepExport() {
       report += `\n`;
     }
 
+    const foldDetails = (trainResult as any).fold_details || [];
+    if (foldDetails.length > 0) {
+      report += `### 4.3 交叉验证详细结果\n\n`;
+      report += `> **说明**: 每个模型训练包含3个阶段的交叉验证：Base（基础模型）、Tuned（网格搜索调优后）、Bagging/Boosting（模型集成后）。\n\n`;
+
+      const foldMetrics = ['Accuracy', 'AUC', 'Recall', 'Precision', 'F1', 'Kappa', 'MCC'];
+      const regressionMetrics = ['R2', 'RMSE', 'MAE', 'MSE', 'RMSLE'];
+      const taskMetrics = taskType === 'regression' ? regressionMetrics : foldMetrics;
+
+      foldDetails.forEach((detail: any) => {
+        const stageEmoji = detail.stage === 'Base' ? '🔰' : detail.stage === 'Tuned' ? '⚙️' : '🔗';
+        report += `#### ${stageEmoji} ${detail.model} - ${detail.stage}\n\n`;
+        report += `| Fold | ${taskMetrics.filter(m => !['TT (Sec)', 'TT(Sec)', 'MS'].includes(m)).join(' | ')} |\n`;
+        report += `|${taskMetrics.filter(m => !['TT (Sec)', 'TT(Sec)', 'MS'].includes(m)).map(() => '-'.repeat(10)).join('|')}|\n`;
+
+        if (detail.folds && detail.folds.length > 0) {
+          detail.folds.forEach((fold: any, idx: number) => {
+            const vals = taskMetrics
+              .filter(m => !['TT (Sec)', 'TT(Sec)', 'MS'].includes(m))
+              .map(m => {
+                const v = fold[m];
+                if (v === null || v === undefined) return '-';
+                if (typeof v === 'number') return v.toFixed(4);
+                return String(v);
+              });
+            report += `| Fold ${idx + 1} | ${vals.join(' | ')} |\n`;
+          });
+        }
+
+        const avgRow = taskMetrics
+          .filter(m => !['TT (Sec)', 'TT(Sec)', 'MS'].includes(m))
+          .map(m => {
+            if (detail.folds && detail.folds.length > 0) {
+              const vals = detail.folds.map((f: any) => parseFloat(f[m]) || 0);
+              if (vals.length > 0) {
+                const avg = vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
+                return avg.toFixed(4);
+              }
+            }
+            return '-';
+          });
+        report += `| **Mean** | ${avgRow.join(' | ')} |\n\n`;
+      });
+    }
+
     if (Object.keys(modelScores).length > 0) {
-      report += `### 4.3 所有模型得分\n\n`;
-      Object.entries(modelScores).forEach(([name, score]) => { report += `- **${name}**: ${score}\n`; });
+      report += `### 4.4 所有模型得分排序\n\n`;
+      report += `| 排名 | 模型 | 得分 |\n|------|------|------|\n`;
+      const sortedScores = Object.entries(modelScores).sort((a: any, b: any) => (b[1] as number) - (a[1] as number));
+      sortedScores.forEach(([name, score], idx) => {
+        const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+        report += `| ${medal} | ${name} | ${typeof score === 'number' ? score.toFixed(6) : score} |\n`;
+      });
       report += `\n`;
     }
 
     if (Object.keys(featImportance).length > 0) {
-      report += `### 4.4 特征重要性 Top 10\n\n`;
+      report += `### 4.5 特征重要性 Top 10\n\n`;
       report += `| 特征 | 重要性 |\n|------|--------|\n`;
       Object.entries(featImportance).sort((a, b) => (b[1] as number) - (a[1] as number)).slice(0, 10).forEach(([name, value]) => {
         report += `| ${name} | ${value} |\n`;
