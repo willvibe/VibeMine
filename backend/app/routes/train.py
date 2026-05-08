@@ -4,17 +4,16 @@ import uuid
 import logging
 import time
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from app.services.train_service import run_automl
 from app.config import UPLOAD_DIR, MODEL_DIR
+from app.services.session_manager import init_session, update_session, get_session, delete_session
 
 router = APIRouter(prefix="/api", tags=["train"])
 logger = logging.getLogger(__name__)
 
 MAX_SESSIONS = 50
 SESSION_TTL = 3600
-
 
 class TrainRequest(BaseModel):
     filename: str
@@ -30,23 +29,22 @@ class TrainRequest(BaseModel):
     use_ensembling: bool = True
 
 
-training_sessions = {}
-session_lock = threading.Lock()
+active_sessions = {}
+session_lock = threading.RLock()
 
 
 def _cleanup_old_sessions():
-    now = time.time()
-    expired = [
-        sid
-        for sid, s in training_sessions.items()
-        if s.status in ("completed", "error", "stopped")
-        and hasattr(s, "_completed_at")
-        and (now - s._completed_at) > SESSION_TTL
-    ]
+    expired = []
+    with session_lock:
+        expired = [
+            sid for sid, data in active_sessions.items()
+            if data.get('status') in ("completed", "error", "stopped")
+            and (time.time() - data.get('_completed_at', 0)) > SESSION_TTL
+        ]
+        for sid in expired:
+            del active_sessions[sid]
     for sid in expired:
-        session = training_sessions[sid]
-        session.cleanup()
-        del training_sessions[sid]
+        _delete_session_files(sid)
     if expired:
         logger.info(f"Cleaned up {len(expired)} expired sessions")
 
@@ -60,40 +58,8 @@ def _delete_file(filepath: str):
         logger.warning(f"Failed to delete file {filepath}: {e}")
 
 
-class TrainingSession:
-    def __init__(self, params: TrainRequest):
-        self.session_id = uuid.uuid4().hex[:12]
-        self.params = params
-        self.model_id = None
-        self.status = "training"
-        self.progress = 0
-        self.current_model = "初始化..."
-        self.completed_models = []
-        self.stop_event = threading.Event()
-        self.result = None
-        self.error = None
-        self._completed_at = None
-
-    def to_dict(self):
-        d = {
-            "session_id": self.session_id,
-            "status": self.status,
-            "progress": self.progress,
-            "current_model": self.current_model,
-            "completed_models": self.completed_models,
-        }
-        if self.result:
-            d["result"] = self.result
-        if self.error:
-            d["error"] = self.error
-        return d
-
-    def cleanup(self, delete_model=True):
-        csv_path = os.path.join(UPLOAD_DIR, self.params.filename)
-        _delete_file(csv_path)
-        if delete_model and self.model_id:
-            model_path = os.path.join(MODEL_DIR, f"{self.model_id}.pkl")
-            _delete_file(model_path)
+def _delete_session_files(session_id: str):
+    delete_session(session_id)
 
 
 def _friendly_error(raw_error: str) -> str:
@@ -115,57 +81,19 @@ def _friendly_error(raw_error: str) -> str:
     return msg
 
 
-def _progress_cb(session: TrainingSession):
-    def callback(progress: int, message: str = "", completed_models: list = None):
-        session.progress = progress
-        session.current_model = message
-        if completed_models:
-            session.completed_models = completed_models
-        return session.stop_event.is_set()
-    return callback
-
-
-def _run_training(session: TrainingSession):
-    session.model_id = uuid.uuid4().hex[:12]
-    try:
-        result = run_automl(
-            filename=session.params.filename,
-            task_type=session.params.task_type,
-            target_column=session.params.target_column,
-            selected_models=session.params.selected_models,
-            ignore_columns=session.params.ignore_columns,
-            use_smote=session.params.use_smote,
-            use_outlier_removal=session.params.use_outlier_removal,
-            use_advanced_imputation=session.params.use_advanced_imputation,
-            use_stratified_cv=session.params.use_stratified_cv,
-            use_tuning=session.params.use_tuning,
-            use_ensembling=session.params.use_ensembling,
-            progress_callback=_progress_cb(session),
-            stop_event=session.stop_event,
-            model_id=session.model_id,
-        )
-
-        session.result = result
-        session.status = "completed"
-        session.progress = 100
-        session.current_model = ""
-        session._completed_at = time.time()
-        session.cleanup(delete_model=False)
-        logger.info(f"Training session {session.session_id} completed successfully")
-
-    except Exception as e:
-        if session.stop_event.is_set():
-            session.error = "训练已被用户停止"
-            session.status = "stopped"
-            session._completed_at = time.time()
-            logger.info(f"Training session {session.session_id} stopped by user")
-        else:
-            friendly = _friendly_error(str(e))
-            session.error = friendly
-            session.status = "error"
-            session._completed_at = time.time()
-            logger.error(f"Training session {session.session_id} failed: {str(e)}", exc_info=True)
-        session.cleanup()
+def _run_training_in_thread(session_id: str, params_dict: dict, model_id: str, stop_file: str):
+    import subprocess
+    import json
+    
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    worker_script = os.path.join(project_root, "training_worker.py")
+    cmd = ["python3", worker_script, session_id, json.dumps(params_dict)]
+    log_file = f"/tmp/vibemine_train_{session_id}.log"
+    
+    with open(log_file, 'w') as log_f:
+        subprocess.run(cmd, stdout=log_f, stderr=log_f)
+    
+    logger.info(f"Training subprocess finished for session {session_id}")
 
 
 @router.post("/train")
@@ -175,49 +103,104 @@ async def train_models(req: TrainRequest):
 
     with session_lock:
         _cleanup_old_sessions()
-        if len(training_sessions) >= MAX_SESSIONS:
+        if len(active_sessions) >= MAX_SESSIONS:
             raise HTTPException(status_code=429, detail="当前训练任务过多，请稍后再试")
-        session = TrainingSession(req)
-        training_sessions[session.session_id] = session
+        
+        session_id = uuid.uuid4().hex[:12]
+        model_id = uuid.uuid4().hex[:12]
+        stop_file = f"/tmp/vibemine_stop_{session_id}"
+        
+        initial_data = {
+            'session_id': session_id,
+            'model_id': model_id,
+            'status': 'training',
+            'progress': 0,
+            'current_model': '初始化...',
+            'completed_models': [],
+            'filename': req.filename,
+            '_created_at': time.time()
+        }
+        
+        init_session(session_id, initial_data)
+        active_sessions[session_id] = initial_data.copy()
 
-    thread = threading.Thread(target=_run_training, args=(session,), daemon=True)
+    params_dict = {
+        "filename": req.filename,
+        "task_type": req.task_type,
+        "target_column": req.target_column,
+        "selected_models": req.selected_models,
+        "ignore_columns": req.ignore_columns,
+        "use_smote": req.use_smote,
+        "use_outlier_removal": req.use_outlier_removal,
+        "use_advanced_imputation": req.use_advanced_imputation,
+        "use_stratified_cv": req.use_stratified_cv,
+        "use_tuning": req.use_tuning,
+        "use_ensembling": req.use_ensembling,
+        "model_id": model_id,
+        "stop_file": stop_file,
+    }
+
+    thread = threading.Thread(
+        target=_run_training_in_thread,
+        args=(session_id, params_dict, model_id, stop_file),
+        daemon=True
+    )
     thread.start()
 
-    return {"session_id": session.session_id, "status": "training"}
+    return {"session_id": session_id, "status": "training"}
 
 
 @router.get("/train/status/{session_id}")
 async def get_train_status(session_id: str):
-    with session_lock:
-        session = training_sessions.get(session_id)
-    if not session:
+    session_data = get_session(session_id)
+    if not session_data:
+        with session_lock:
+            cached = active_sessions.get(session_id)
+        if cached:
+            session_data = cached
+    
+    if not session_data:
         raise HTTPException(status_code=404, detail="训练会话不存在或已过期")
+    
     d = {
-        "session_id": session.session_id,
-        "status": session.status,
-        "progress": session.progress,
-        "current_model": session.current_model,
-        "completed_models": session.completed_models,
+        "session_id": session_data.get("session_id", session_id),
+        "status": session_data.get("status", "training"),
+        "progress": session_data.get("progress", 0),
+        "current_model": session_data.get("current_model", ""),
+        "completed_models": session_data.get("completed_models", []),
     }
-    if session.result:
-        result_copy = dict(session.result)
+    if session_data.get("result"):
+        result_copy = dict(session_data["result"])
         result_copy.pop('shap_plot', None)
         d["result"] = result_copy
-    if session.error:
-        d["error"] = session.error
+    if session_data.get("error"):
+        d["error"] = session_data["error"]
     return d
 
 
 @router.post("/train/stop/{session_id}")
 async def stop_training(session_id: str):
-    with session_lock:
-        session = training_sessions.get(session_id)
-    if not session:
+    session_data = get_session(session_id)
+    if not session_data:
+        with session_lock:
+            session_data = active_sessions.get(session_id)
+    
+    if not session_data:
         raise HTTPException(status_code=404, detail="训练会话不存在或已过期")
-    session.stop_event.set()
+    
+    stop_file = f"/tmp/vibemine_stop_{session_id}"
+    open(stop_file, 'w').close()
+    
+    updates = {
+        'status': 'stopped',
+        '_completed_at': time.time()
+    }
+    update_session(session_id, updates)
+    
     with session_lock:
-        session.status = "stopped"
-        session._completed_at = time.time()
+        if session_id in active_sessions:
+            active_sessions[session_id].update(updates)
+    
     return {"status": "stopped"}
 
 

@@ -1,5 +1,4 @@
 import os
-import re
 import logging
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.services.data_service import save_upload_file, parse_csv, get_data_profile
@@ -84,10 +83,6 @@ async def upload_file(file: UploadFile = File(...)):
 @router.get("/upload/ai-insight/{filename}")
 async def get_upload_ai_insight(filename: str):
     raise HTTPException(status_code=501, detail="AI insight 已移至前端执行，请在上传页点击 AI 按钮")
-
-
-def _is_safe_filename(filename: str) -> bool:
-    return bool(re.match(r'^[a-zA-Z0-9_.-]+$', filename))
 
 
 def _cleanup_file(saved_name: str):

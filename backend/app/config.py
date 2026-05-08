@@ -11,6 +11,9 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# Gemini模型名称（根据您的API Key支持的模型配置）
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+
 # 代理配置（国内服务器需配置代理才能访问 Gemini API）
 GEMINI_PROXY = os.getenv("GEMINI_PROXY", "")
 if GEMINI_PROXY:

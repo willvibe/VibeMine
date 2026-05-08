@@ -1,7 +1,6 @@
 import axios from 'axios';
 
 const API_KEY_KEY = 'vibemine_gemini_key';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 export function getApiKey(): string | null {
   return localStorage.getItem(API_KEY_KEY);
@@ -19,30 +18,22 @@ function authHeaders(): Record<string, string> {
   return key ? { 'x-api-key': key } : {};
 }
 
-/** 前端直接调用 Gemini REST API */
+/** 通过后端代理调用 Gemini API（支持代理配置） */
 export async function callGemini(prompt: string, apiKey?: string): Promise<string> {
   const key = apiKey || getApiKey();
   if (!key) {
     return '**未设置 API Key**\n\n请在设置中填写 Gemini API Key 后再使用 AI 功能';
   }
-  const url = `${GEMINI_API_URL}?key=${key}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-    }),
-  });
-  if (!res.ok) {
-    const errData = await res.json().catch(() => null);
-    const errMsg = errData?.error?.message || res.statusText;
-    if (res.status === 429) {
+  try {
+    const res = await api.post('/ai/gemini', { prompt, api_key: key }, { headers: authHeaders() });
+    return res.data.result || '**AI 返回空结果，请稍后重试**';
+  } catch (err: any) {
+    const detail = err?.response?.data?.detail || err.message || String(err);
+    if (err?.response?.status === 429) {
       return `**AI 分析失败 - 配额已用尽**\n\n您的 Gemini API Key 免费额度已用完。请：\n1. 前往 [Google AI Studio](https://aistudio.google.com/) 升级计费计划\n2. 或在设置中更换其他 API Key\n3. 免费用户每分钟有请求次数限制，请稍后重试`;
     }
-    return `**AI 分析失败**\n\nHTTP ${res.status}: ${errMsg.slice(0, 150)}`;
+    return `**AI 分析失败**\n\n${detail.slice(0, 200)}`;
   }
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '**AI 返回空结果，请稍后重试**';
 }
 
 export async function uploadFile(formData: FormData) {

@@ -11,6 +11,11 @@ export default function StepTrain() {
   const selectedModels = useAppStore((s) => s.selectedModels);
   const ignoreColumns = useAppStore((s) => s.ignoreColumns);
   const useSmote = useAppStore((s) => s.useSmote);
+  const useOutlierRemoval = useAppStore((s) => s.useOutlierRemoval);
+  const useAdvancedImputation = useAppStore((s) => s.useAdvancedImputation);
+  const useStratifiedCv = useAppStore((s) => s.useStratifiedCv);
+  const useTuning = useAppStore((s) => s.useTuning);
+  const useEnsembling = useAppStore((s) => s.useEnsembling);
   const setTraining = useAppStore((s) => s.setTraining);
   const setTrainResult = useAppStore((s) => s.setTrainResult);
   const setStep = useAppStore((s) => s.setStep);
@@ -90,11 +95,11 @@ export default function StepTrain() {
           selected_models: selectedModels,
           ignore_columns: ignoreColumns,
           use_smote: useSmote,
-          use_outlier_removal: true,
-          use_advanced_imputation: true,
-          use_stratified_cv: true,
-          use_tuning: true,
-          use_ensembling: true,
+          use_outlier_removal: useOutlierRemoval,
+          use_advanced_imputation: useAdvancedImputation,
+          use_stratified_cv: useStratifiedCv,
+          use_tuning: useTuning,
+          use_ensembling: useEnsembling,
         });
         sessionIdRef.current = data.session_id;
         setTrainingStage(t('initEngine'));
@@ -211,7 +216,7 @@ export default function StepTrain() {
           {[
             { label: t('taskType'), value: taskLabel },
             taskType !== 'clustering' && { label: t('targetColumn'), value: targetColumn },
-            { label: t('models'), value: `${selectedModels.length} ${t('modelCount')?.replace(/.*?(\d+).*/,'$1') || ''}` },
+            { label: t('models'), value: `${selectedModels.length}` },
             useSmote && { label: t('smote'), value: t('smoteEnabled') },
             ignoreColumns.length > 0 && { label: t('ignoreColumns'), value: `${ignoreColumns.length}` },
           ]

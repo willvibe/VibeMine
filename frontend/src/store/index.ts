@@ -74,6 +74,11 @@ interface AppState {
   selectedModels: string[];
   ignoreColumns: string[];
   useSmote: boolean;
+  useOutlierRemoval: boolean;
+  useAdvancedImputation: boolean;
+  useStratifiedCv: boolean;
+  useTuning: boolean;
+  useEnsembling: boolean;
   isTraining: boolean;
   trainResult: TrainResult | null;
   sessionId: string | null;
@@ -102,6 +107,11 @@ interface AppState {
   setSelectedModels: (models: string[]) => void;
   setIgnoreColumns: (cols: string[]) => void;
   setUseSmote: (val: boolean) => void;
+  setUseOutlierRemoval: (val: boolean) => void;
+  setUseAdvancedImputation: (val: boolean) => void;
+  setUseStratifiedCv: (val: boolean) => void;
+  setUseTuning: (val: boolean) => void;
+  setUseEnsembling: (val: boolean) => void;
   setTraining: (val: boolean) => void;
   setTrainResult: (result: TrainResult, sessionId?: string) => void;
   setAiEvaluation: (evaluation: string) => void;
@@ -128,6 +138,11 @@ const initialState = {
   selectedModels: ['lr', 'rf', 'gbc', 'et', 'xgb'],
   ignoreColumns: [] as string[],
   useSmote: false,
+  useOutlierRemoval: true,
+  useAdvancedImputation: true,
+  useStratifiedCv: true,
+  useTuning: true,
+  useEnsembling: true,
   isTraining: false,
   trainResult: null as TrainResult | null,
   sessionId: null as string | null,
@@ -160,6 +175,11 @@ export const useAppStore = create<AppState>((set) => ({
   setSelectedModels: (selectedModels) => set({ selectedModels }),
   setIgnoreColumns: (ignoreColumns) => set({ ignoreColumns }),
   setUseSmote: (useSmote) => set({ useSmote }),
+  setUseOutlierRemoval: (useOutlierRemoval) => set({ useOutlierRemoval }),
+  setUseAdvancedImputation: (useAdvancedImputation) => set({ useAdvancedImputation }),
+  setUseStratifiedCv: (useStratifiedCv) => set({ useStratifiedCv }),
+  setUseTuning: (useTuning) => set({ useTuning }),
+  setUseEnsembling: (useEnsembling) => set({ useEnsembling }),
   setTraining: (isTraining) => set({ isTraining }),
   setTrainResult: (result, sessionId) => set({ trainResult: result, sessionId: sessionId || null }),
   setAiEvaluation: (aiEvaluation) => set({ aiEvaluation }),

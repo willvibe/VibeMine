@@ -74,6 +74,7 @@ export default function StepUpload() {
         dataInfo: data.info || [],
         dataDescribe: data.describe || {},
         totalRows: data.total_rows || 0,
+        classDistributions: data.class_distributions || {},
       });
       setImbalanceInfo(data.imbalance_detected || false, data.imbalance_ratio || 0);
     } catch (err) {
@@ -189,19 +190,19 @@ ${colSummaries}
                 onClick={() => setActiveTab('data')}
                 className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-all ${activeTab === 'data' ? 'bg-white text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                Data
+                {t('dataTab')}
               </button>
               <button
                 onClick={() => setActiveTab('info')}
                 className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-all ${activeTab === 'info' ? 'bg-white text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                Info
+                {t('infoTab')}
               </button>
               <button
                 onClick={() => setActiveTab('stats')}
                 className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-all ${activeTab === 'stats' ? 'bg-white text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                Stats
+                {t('statsTab')}
               </button>
             </div>
 
@@ -294,7 +295,7 @@ ${colSummaries}
                 </div>
                 {(preview || []).length > 20 && (
                   <div className="px-3 py-2 text-xs text-gray-400 bg-gray-50/50 text-center">
-                    显示前 20 / {(preview || []).length} 条数据
+                    {t('showingRows', { shown: 20, total: (preview || []).length })}
                   </div>
                 )}
               </div>

@@ -178,7 +178,7 @@ export default function StepExport() {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch {
-      alert(t('uploadError'));
+      alert(t('downloadError'));
     }
   };
 

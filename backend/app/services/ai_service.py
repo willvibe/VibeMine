@@ -4,6 +4,7 @@ from google import genai
 from app.config import GEMINI_API_KEY
 
 _CLIENT_CACHE = {}
+_MAX_CACHE_SIZE = 10
 
 
 def _get_proxy() -> str | None:
@@ -16,6 +17,8 @@ def get_client(api_key: str = None) -> genai.Client:
     if not key:
         raise ValueError("Gemini API Key 未设置，请在设置中配置")
     if key not in _CLIENT_CACHE:
+        if len(_CLIENT_CACHE) >= _MAX_CACHE_SIZE:
+            _CLIENT_CACHE.pop(next(iter(_CLIENT_CACHE)))
         http_opts = {"timeout": 60}
         proxy = _get_proxy()
         if proxy:

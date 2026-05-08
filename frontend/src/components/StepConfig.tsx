@@ -32,8 +32,11 @@ export default function StepConfig() {
   const { t } = useI18n();
   const {
     filename, columns, taskType, targetColumn, selectedModels,
-    ignoreColumns, useSmote, setTaskType, setTargetColumn, setSelectedModels,
-    setIgnoreColumns, setUseSmote,
+    ignoreColumns, useSmote, useOutlierRemoval, useAdvancedImputation,
+    useStratifiedCv, useTuning, useEnsembling,
+    setTaskType, setTargetColumn, setSelectedModels,
+    setIgnoreColumns, setUseSmote, setUseOutlierRemoval,
+    setUseAdvancedImputation, setUseStratifiedCv, setUseTuning, setUseEnsembling,
     setStep,
   } = useAppStore();
 
@@ -181,7 +184,7 @@ export default function StepConfig() {
       <div className="glass-card rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-gray-700">{t('ignoreColumns')}</h3>
-          <span className="text-xs text-gray-400">{ignoreColumns.length} selected</span>
+          <span className="text-xs text-gray-400">{t('ignoreSelected', { count: ignoreColumns.length })}</span>
         </div>
         <div className="flex flex-wrap gap-2">
           {columns.filter(c => c !== targetColumn).map(col => {
@@ -250,12 +253,63 @@ export default function StepConfig() {
               />
               <div>
                 <span className="text-sm font-medium text-gray-700">{t('smote')}</span>
-                {canUseSmote && (
-                  <span className="text-xs text-gray-400 ml-2">{t('smoteEnabled')}</span>
+                {useSmote && canUseSmote && (
+                  <span className="text-xs text-emerald-500 ml-2">{t('smoteEnabled')}</span>
+                )}
+                {!useSmote && canUseSmote && (
+                  <span className="text-xs text-gray-400 ml-2">{t('smoteDisabled')}</span>
+                )}
+                {!canUseSmote && (
+                  <span className="text-xs text-gray-400 ml-2">（少数类样本不足）</span>
                 )}
               </div>
             </label>
           )}
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useOutlierRemoval}
+              onChange={e => setUseOutlierRemoval(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span className="text-sm font-medium text-gray-700">{t('outlierRemoval')}</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useAdvancedImputation}
+              onChange={e => setUseAdvancedImputation(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span className="text-sm font-medium text-gray-700">{t('advancedImputation')}</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useStratifiedCv}
+              onChange={e => setUseStratifiedCv(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span className="text-sm font-medium text-gray-700">{t('stratifiedCv')}</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useTuning}
+              onChange={e => setUseTuning(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span className="text-sm font-medium text-gray-700">{t('modelTuning')}</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useEnsembling}
+              onChange={e => setUseEnsembling(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span className="text-sm font-medium text-gray-700">{t('ensembling')}</span>
+          </label>
         </div>
       </div>
 

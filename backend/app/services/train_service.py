@@ -21,9 +21,6 @@ logger = logging.getLogger(__name__)
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["JOBLIB_START_METHOD"] = "spawn"
-
-multiprocessing.set_start_method("spawn", force=True)
 
 MODEL_NAME_MAP = {
     'lr': 'lr', 'ridge': 'ridge', 'lasso': 'lasso', 'rf': 'rf',
@@ -177,10 +174,27 @@ def run_automl(
         logger.info("Phase 3: 3-Fold CV with shuffle enabled for regression")
 
     if task_type == "classification":
-        report_progress(3, "数据预处理中...")
+        report_progress(2, "Phase 1: 异常值检测 (Isolation Forest)...")
         check_stop()
 
-        # 合并所有预处理参数
+        outlier_info = ""
+        if use_outlier_removal:
+            outlier_info = "Isolation Forest (阈值=0.05)"
+
+        report_progress(3, "Phase 2: 缺失值填充 (KNN/MICE)...")
+        check_stop()
+
+        imputation_info = ""
+        if use_advanced_imputation:
+            imputation_info = "数值列: 删除 | 分类型: 众数填充"
+
+        report_progress(4, "Phase 3: 分层3折交叉验证...")
+        check_stop()
+
+        cv_info = ""
+        if use_stratified_cv:
+            cv_info = "分层3折交叉验证 (Stratified 3-Fold CV)"
+
         setup_params = {
             'data': df,
             'target': target_column,
@@ -194,9 +208,10 @@ def run_automl(
         setup_params.update(imputation_params)
         setup_params.update(cv_params)
 
+        report_progress(5, "Phase 4: 初始化 PyCaret 环境...")
         cls_setup(**setup_params)
 
-        report_progress(8, "数据预处理完成")
+        report_progress(6, "Phase 5: 开始模型训练...")
         check_stop()
 
         models_to_train = selected_models if selected_models else ['lr', 'rf', 'gbc', 'et', 'xgb']
@@ -204,19 +219,19 @@ def run_automl(
         logger.info(f"Training {len(mapped_models)} models: {mapped_models}")
         metrics_list = []
         best_model = None
-        best_score = -1
+        best_score = -float('inf')
         total_models = len(mapped_models)
         model_scores = {}
 
         for i, model_name in enumerate(mapped_models):
             check_stop()
-            base_progress = 10 + int(50 * i / total_models)
-            report_progress(base_progress, f"训练模型: {model_name.upper()}")
+            base_progress = 8 + int(50 * i / total_models)
+            report_progress(base_progress, f"[{i+1}/{total_models}] 训练基础模型: {model_name.upper()}")
 
             try:
                 base_model = cls_create(model_name, verbose=False)
                 if use_tuning:
-                    report_progress(base_progress + 2, f"调优模型: {model_name.upper()}")
+                    report_progress(base_progress + 1, f"[{i+1}/{total_models}] 网格搜索调优: {model_name.upper()}")
                     check_stop()
                     try:
                         model = cls_tune(base_model, optimize='Accuracy', search_library='optuna', n_iter=5, early_stopping=True, verbose=False)
@@ -240,9 +255,9 @@ def run_automl(
                     best_model = model
 
                 if use_ensembling and model_name in ('rf', 'et', 'gbc', 'ada', 'xgb', 'lightgbm'):
-                    report_progress(base_progress + 4, f"集成模型: {model_name.upper()}")
-                    check_stop()
                     method = 'Bagging' if model_name in ('rf', 'et') else 'Boosting'
+                    report_progress(base_progress + 3, f"[{i+1}/{total_models}] 模型集成 ({method}): {model_name.upper()}")
+                    check_stop()
                     ensemble = cls_ensemble(model, method=method, fold=3, verbose=False)
                     ensemble_all_folds = cls_pull()
                     ensemble_mean_row = _extract_mean_row(ensemble_all_folds, f"{model_name.upper()}_{method}")
@@ -254,7 +269,7 @@ def run_automl(
                         best_score = ensemble_acc
                         best_model = ensemble
 
-                report_progress(base_progress + int(50 / total_models), f"完成: {model_name.upper()}")
+                report_progress(base_progress + int(48 / total_models), f"[{i+1}/{total_models}] 完成: {model_name.upper()}")
                 del model
                 gc.collect()
 
@@ -348,7 +363,13 @@ def run_automl(
             logger.warning(f"Feature importance extraction failed: {e}")
 
     elif task_type == "regression":
-        report_progress(3, "数据预处理中...")
+        report_progress(2, "Phase 1: 异常值检测 (Isolation Forest)...")
+        check_stop()
+
+        report_progress(3, "Phase 2: 缺失值填充 (KNN/MICE)...")
+        check_stop()
+
+        report_progress(4, "Phase 3: 分层3折交叉验证...")
         check_stop()
 
         setup_params = {
@@ -363,9 +384,10 @@ def run_automl(
         setup_params.update(imputation_params)
         setup_params.update(cv_params)
 
+        report_progress(5, "Phase 4: 初始化 PyCaret 环境...")
         reg_setup(**setup_params)
 
-        report_progress(8, "数据预处理完成")
+        report_progress(6, "Phase 5: 开始模型训练...")
         check_stop()
 
         models_to_train = selected_models if selected_models else ['lr', 'ridge', 'rf', 'gbr', 'et']
@@ -378,15 +400,13 @@ def run_automl(
 
         for i, model_name in enumerate(mapped_models):
             check_stop()
-            base_progress = 10 + int(60 * i / total_models)
-            report_progress(base_progress, f"训练模型: {model_name.upper()}")
+            base_progress = 8 + int(50 * i / total_models)
+            report_progress(base_progress, f"[{i+1}/{total_models}] 训练基础模型: {model_name.upper()}")
 
             try:
-                # Phase 4: 模型调优
-                # PyCaret 3.x: 需要先创建模型，再用 tune_model 调优
                 base_model = reg_create(model_name, verbose=False)
                 if use_tuning:
-                    report_progress(base_progress + 2, f"调优模型: {model_name.upper()}")
+                    report_progress(base_progress + 1, f"[{i+1}/{total_models}] 网格搜索调优: {model_name.upper()}")
                     check_stop()
                     try:
                         model = reg_tune(base_model, optimize='R2', search_library='optuna', n_iter=5, early_stopping=True, verbose=False)
@@ -409,11 +429,11 @@ def run_automl(
                     best_score = r2
                     best_model = model
 
-                # Phase 4: 模型集成
+                # Phase 5: 模型集成
                 if use_ensembling and model_name in ('rf', 'et', 'gbr', 'ada', 'xgb', 'lightgbm'):
-                    report_progress(base_progress + 4, f"集成模型: {model_name.upper()}")
-                    check_stop()
                     method = 'Bagging' if model_name in ('rf', 'et') else 'Boosting'
+                    report_progress(base_progress + 3, f"[{i+1}/{total_models}] 模型集成 ({method}): {model_name.upper()}")
+                    check_stop()
                     ensemble = reg_ensemble(model, method=method, fold=3, verbose=False)
                     ensemble_all_folds = reg_pull()
                     ensemble_mean_row = _extract_mean_row(ensemble_all_folds, f"{model_name.upper()}_{method}")
@@ -425,7 +445,7 @@ def run_automl(
                         best_score = ensemble_r2
                         best_model = ensemble
 
-                report_progress(base_progress + int(60 / total_models), f"完成: {model_name.upper()}")
+                report_progress(base_progress + int(48 / total_models), f"[{i+1}/{total_models}] 完成: {model_name.upper()}")
                 del model
                 gc.collect()
 
@@ -476,6 +496,7 @@ def run_automl(
         report_progress(3, "数据预处理中...")
         check_stop()
 
+        report_progress(5, "初始化 PyCaret 环境...")
         clu_setup(
             data=df, session_id=np.random.randint(1, 9999), n_jobs=1, verbose=False,
             ignore_features=ignore_cols if ignore_cols else None,
@@ -488,12 +509,12 @@ def run_automl(
         metrics_list = []
         model_scores = {}
         best_model = None
-        best_score = -1
+        best_score = -float('inf')
         total_models = len(models_to_train)
 
         for i, model_name in enumerate(models_to_train):
             check_stop()
-            report_progress(10 + int(70 * i / total_models), f"训练模型: {model_name.upper()}")
+            report_progress(8 + int(50 * i / total_models), f"[{i+1}/{total_models}] 训练聚类模型: {model_name.upper()}")
             try:
                 if model_name in ('affinity', 'dbscan'):
                     model = clu_create(model_name, verbose=False)
@@ -504,14 +525,13 @@ def run_automl(
                 metrics_list.append(mean_row)
                 completed_models.append(model_name.upper())
 
-                # Track Silhouette score for clustering
                 silhouette_val = float(mean_row['Silhouette'].iloc[0]) if 'Silhouette' in mean_row.columns else 0
                 model_scores[model_name.upper()] = silhouette_val
                 if silhouette_val > best_score:
                     best_score = silhouette_val
                     best_model = model
 
-                report_progress(10 + int(70 * (i + 1) / total_models), f"完成: {model_name.upper()}")
+                report_progress(8 + int(48 * (i + 1) / total_models), f"[{i+1}/{total_models}] 完成: {model_name.upper()}")
             except Exception as e:
                 if "stopped by user" in str(e):
                     raise
@@ -580,19 +600,3 @@ def run_automl(
         "best_score": round(float(best_score), 6) if best_score else None,
     }
 
-
-def _make_serializable(obj):
-    if isinstance(obj, dict):
-        return {k: _make_serializable(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_make_serializable(v) for v in obj]
-    elif hasattr(obj, "item"):
-        return obj.item()
-    elif isinstance(obj, float):
-        if math.isnan(obj) or math.isinf(obj):
-            return None
-        return obj
-    elif isinstance(obj, (int, str, bool, type(None))):
-        return obj
-    else:
-        return str(obj)

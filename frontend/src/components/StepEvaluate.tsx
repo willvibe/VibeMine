@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useAppStore } from '../store';
 import { useI18n } from '../i18n/index';
 import { callGemini } from '../api';
+import ReactMarkdown from 'react-markdown';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts/core';
 import { BarChart, RadarChart } from 'echarts/charts';
@@ -105,6 +106,16 @@ function downloadCSV(rows: Record<string, unknown>[], cols: string[], filename: 
   URL.revokeObjectURL(url);
 }
 
+function downloadMarkdown(content: string, filename: string) {
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function parseMarkdown(text: string) {
   const escaped = text
     .replace(/&/g, '&amp;')
@@ -134,7 +145,8 @@ export default function StepEvaluate() {
   const defaultMetric = taskType === 'regression' ? 'R2' : taskType === 'clustering' ? 'Silhouette' : 'Accuracy';
   const [primaryMetrics, setPrimaryMetrics] = useState<string[]>([defaultMetric]);
   const [showShap, setShowShap] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
+  const [aiEvalLoading, setAiEvalLoading] = useState(false);
+  const [aiMisclassLoading, setAiMisclassLoading] = useState(false);
 
   const barChartRef = useRef<any>(null);
   const radarChartRef = useRef<any>(null);
@@ -337,7 +349,7 @@ export default function StepEvaluate() {
   const featVals = featNames.map(k => feature_importance[k]);
   const featColors = featVals.map((_, i) => `rgba(99,102,241,${Math.max(0.3, 0.9 - i * 0.04)})`);
 
-  const featOption = {
+  const featOption = useMemo(() => ({
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis' as const,
@@ -371,7 +383,7 @@ export default function StepEvaluate() {
       animationDuration: 1200,
       animationEasing: 'cubicOut' as const,
     }],
-  };
+  }), [featNames, featVals, featColors]);
 
   const radarMetrics = tableColumns.filter(c => c !== 'Model').slice(0, 6);
 
@@ -460,7 +472,7 @@ export default function StepEvaluate() {
       setAiEvaluation(t('aiEvalUnavailable'));
       return;
     }
-    setAiLoading(true);
+    setAiEvalLoading(true);
     try {
       const mt = trainResult.metrics_table;
       const bestIdx = mt.findIndex((r: any) => {
@@ -489,7 +501,7 @@ ${table}
     } catch (err) {
       setAiEvaluation(t('aiEvalFailed', { msg: String(err) }));
     } finally {
-      setAiLoading(false);
+      setAiEvalLoading(false);
     }
   };
 
@@ -498,7 +510,7 @@ ${table}
       setMisclassifiedAnalysis(t('aiMisclassUnavailable'));
       return;
     }
-    setAiLoading(true);
+    setAiMisclassLoading(true);
     try {
       const samples = (trainResult as any).misclassified_samples || [];
       const featImp = trainResult.feature_importance || {};
@@ -520,7 +532,7 @@ ${JSON.stringify(samples.slice(0, 20), null, 2)}
     } catch (err) {
       setMisclassifiedAnalysis(t('aiMisclassFailed', { msg: String(err) }));
     } finally {
-      setAiLoading(false);
+      setAiMisclassLoading(false);
     }
   };
 
@@ -656,15 +668,15 @@ ${JSON.stringify(samples.slice(0, 20), null, 2)}
               </div>
               {misclassifiedAnalysis ? (
                 <div className="bg-gray-50/60 rounded-xl p-4 border border-gray-100">
-                  <p className="text-sm text-gray-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(misclassifiedAnalysis) }} />
+                                    <div className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"><ReactMarkdown>{misclassifiedAnalysis}</ReactMarkdown></div>
                 </div>
               ) : (
                 <button
                   onClick={handleAiMisclassified}
-                  disabled={aiLoading}
+                  disabled={aiMisclassLoading}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xs font-medium shadow-md hover:shadow-lg hover:shadow-indigo-500/20 transition-all disabled:opacity-60"
                 >
-                  {aiLoading ? (
+                  {aiMisclassLoading ? (
                     <>
                       <svg className="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -691,15 +703,15 @@ ${JSON.stringify(samples.slice(0, 20), null, 2)}
               <p className="text-sm text-gray-400 mb-4">{t('noMisclassified')}</p>
               {misclassifiedAnalysis ? (
                 <div className="bg-gray-50/60 rounded-xl p-4 border border-gray-100">
-                  <p className="text-sm text-gray-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(misclassifiedAnalysis) }} />
+                                    <div className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"><ReactMarkdown>{misclassifiedAnalysis}</ReactMarkdown></div>
                 </div>
               ) : (
                 <button
                   onClick={handleAiMisclassified}
-                  disabled={aiLoading}
+                  disabled={aiMisclassLoading}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xs font-medium shadow-md hover:shadow-lg hover:shadow-indigo-500/20 transition-all disabled:opacity-60"
                 >
-                  {aiLoading ? (
+                  {aiMisclassLoading ? (
                     <>
                       <svg className="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -723,16 +735,51 @@ ${JSON.stringify(samples.slice(0, 20), null, 2)}
           <div className="glass-card rounded-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold text-gray-900">{t('detailedMetrics')}</h3>
-              <button
-                onClick={() => downloadCSV(metrics_table, tableColumns, 'vibemine_metrics.csv')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M16 12l-4 4-4-4M12 16V4" />
-                </svg>
-                {t('downloadCsv')}
+              <div className="flex items-center gap-2">
+                {aiEvaluation && (
+                  <button
+                    onClick={() => downloadMarkdown(aiEvaluation, 'vibemine_ai_interpretation.md')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M16 12l-4 4-4-4M12 16V4" />
+                    </svg>
+                    {t('downloadMd')}
+                  </button>
+                )}
+                <button
+                  onClick={() => downloadCSV(metrics_table, tableColumns, 'vibemine_metrics.csv')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M16 12l-4 4-4-4M12 16V4" />
+                  </svg>
+                  {t('downloadCsv')}
+                </button>
+                <button
+                  onClick={handleAiEvaluation}
+                  disabled={aiEvalLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xs font-medium shadow-md hover:shadow-lg hover:shadow-indigo-500/20 transition-all disabled:opacity-60"
+                >
+                  {aiEvalLoading ? (
+                    <>
+                      <svg className="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                      </svg>
+                      {t('generating')}
+                    </>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      {t('aiInterpretation')}
+                    </>
+                  )}
                 </button>
               </div>
+            </div>
             <div className="overflow-x-auto rounded-xl border border-gray-100 mb-6">
               <table className="w-full text-xs">
                 <thead className="bg-gray-50/80">
@@ -775,46 +822,30 @@ ${JSON.stringify(samples.slice(0, 20), null, 2)}
                 <ReactECharts ref={radarChartRef} echarts={echarts} option={radarOption} style={{ height: 340 }} notMerge={true} lazyUpdate={true} />
               </>
             )}
+
+            {aiEvaluation && (
+              <div className="mt-6 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-5 border border-indigo-100">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold text-indigo-700">{t('aiInterpretation')}</h4>
+                  <button
+                    onClick={() => downloadMarkdown(aiEvaluation, 'vibemine_ai_interpretation.md')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-indigo-600 hover:bg-indigo-100 transition-all"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M16 12l-4 4-4-4M12 16V4" />
+                    </svg>
+                    {t('downloadMd')}
+                  </button>
+                </div>
+                <div className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none ai-content">
+                  <ReactMarkdown>{aiEvaluation}</ReactMarkdown>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         <div className="space-y-6">
-          <div className="glass-card rounded-2xl p-6 sticky top-24">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold text-gray-900">{t('aiInterpretation')}</h3>
-              {!aiEvaluation && (
-                <button
-                  onClick={handleAiEvaluation}
-                  disabled={aiLoading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xs font-medium shadow-md hover:shadow-lg hover:shadow-indigo-500/20 transition-all disabled:opacity-60"
-                >
-                  {aiLoading ? (
-                    <>
-                      <svg className="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                      </svg>
-                      {t('generating')}
-                    </>
-                  ) : (
-                    <>
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      {t('aiGenerateBtn')}
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
-            {aiEvaluation ? (
-              <div className="text-sm text-gray-600 leading-relaxed">
-                <p className="whitespace-pre-wrap">{aiEvaluation}</p>
-              </div>
-            ) : (
-              <p className="text-xs text-gray-400 italic">{t('aiHintText')}</p>
-            )}
-          </div>
 
           <div className="glass-card rounded-2xl p-6">
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">{t('trainingSummary')}</h3>
